@@ -64,7 +64,7 @@ const API = {
     return '';
   },
 
-  // ===== Core GET Fetch (via server proxy to avoid CORS) =====
+  // ===== Core GET Fetch (direct GAS call - CORS supported) =====
   async fetchFromWebApp(action, params = {}) {
     const gasUrl = this.getWebAppUrl();
     if (!gasUrl) throw new Error('Web App URL 未设置');
@@ -88,12 +88,11 @@ const API = {
     });
 
     const targetUrl = `${gasUrl}?${queryParams.toString()}`;
-    const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
-      const response = await fetch(proxyUrl, { method: 'GET', signal: controller.signal });
+      const response = await fetch(targetUrl, { method: 'GET', redirect: 'follow', signal: controller.signal });
       clearTimeout(timeoutId);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
@@ -112,7 +111,7 @@ const API = {
     }
   },
 
-  // ===== Core POST Fetch (via server proxy to avoid CORS) =====
+  // ===== Core POST Fetch (direct GAS call - CORS supported) =====
   async postToWebApp(payload) {
     const gasUrl = this.getWebAppUrl();
     if (!gasUrl) throw new Error('Web App URL 未设置');
@@ -120,23 +119,23 @@ const API = {
 
     const hmacParams = this.signRequest(payload.action || 'submit', _authEmail || '');
 
-    const bodyPayload = {
-      _gasUrl: gasUrl,
+    const bodyPayload = JSON.stringify({
       ...payload,
       appVersion: APP_VERSION_STR,
       userEmail: _authEmail,
       ...hmacParams,
-    };
+    });
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     let response;
     try {
-      response = await fetch('/api/proxy', {
+      response = await fetch(gasUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload),
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain' },
+        body: bodyPayload,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
