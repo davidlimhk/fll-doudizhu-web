@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#ffffff">
+  <title>FLL 鬥地主記分</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/icon.png">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+    
+    <!-- Undo Banner -->
+    <div id="undo-banner" class="undo-banner hidden"></div>
+
+    <!-- Main Content Area -->
+    <div id="page-content" class="page-content"></div>
+
+    <!-- Tab Bar -->
+    <nav id="tab-bar" class="tab-bar">
+      <button class="tab-item active" data-tab="score" onclick="switchTab('score')">
+        <span class="material-icons">edit</span>
+        <span class="tab-label" data-i18n="tab_score">記分</span>
+        <span id="pending-badge" class="badge hidden">0</span>
+      </button>
+      <button class="tab-item" data-tab="history" onclick="switchTab('history')">
+        <span class="material-icons">history</span>
+        <span class="tab-label" data-i18n="tab_history">歷史</span>
+      </button>
+      <button class="tab-item" data-tab="stats" onclick="switchTab('stats')">
+        <span class="material-icons">bar_chart</span>
+        <span class="tab-label" data-i18n="tab_stats">統計</span>
+      </button>
+      <button class="tab-item" data-tab="settings" onclick="switchTab('settings')">
+        <span class="material-icons">settings</span>
+        <span class="tab-label" data-i18n="tab_settings">設置</span>
+      </button>
+    </nav>
+
+    <!-- Picker Modal -->
+    <div id="picker-modal" class="modal-overlay hidden" onclick="closePicker(event)">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <span id="picker-title" class="modal-title"></span>
+          <button class="modal-close" onclick="closePicker()" data-i18n="score_cancel">取消</button>
+        </div>
+        <div id="picker-list" class="picker-list"></div>
+      </div>
+    </div>
+
+    <!-- Date Filter Modal -->
+    <div id="date-modal" class="modal-overlay hidden" onclick="closeDateModal(event)">
+      <div class="date-modal-content" onclick="event.stopPropagation()">
+        <div id="date-modal-inner"></div>
+      </div>
+    </div>
+
+    <!-- Player Picker Modal (Stats) -->
+    <div id="player-picker-modal" class="modal-overlay hidden" onclick="closePlayerPicker(event)">
+      <div class="player-picker-content" onclick="event.stopPropagation()">
+        <div id="player-picker-inner"></div>
+      </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen hidden">
+      <div class="login-card">
+        <img src="/icon.png" class="login-logo" alt="FLL">
+        <h1 class="login-title">FLL 鬥地主</h1>
+        <p class="login-subtitle" id="login-subtitle"></p>
+        <input type="email" id="login-email" class="login-email-input" placeholder="Google Email" autocomplete="email" autocapitalize="off">
+        <button class="login-btn" id="login-btn" onclick="handleLogin()">
+          <span class="material-icons">login</span>
+          <span data-i18n="auth_login_button">登入</span>
+        </button>
+        <div class="login-version" id="login-version"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/i18n.js?v=3"></script>
+  <script src="/api.js?v=3"></script>
+  <script src="/app.js?v=3"></script>
+</body>
+</html>
