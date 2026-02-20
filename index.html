@@ -86,8 +86,17 @@
     </div>
   </div>
 
-  <script src="/i18n.js?v=3"></script>
-  <script src="/api.js?v=3"></script>
-  <script src="/app.js?v=3"></script>
+  <script src="/i18n.js?v=5"></script>
+  <script src="/api.js?v=5"></script>
+  <script src="/app.js?v=5"></script>
+  <script>
+    // Fallback: ensure onReady runs even if DOMContentLoaded already fired
+    setTimeout(function() {
+      if (typeof onReady === 'function' && !window._fllInitDone) {
+        window._fllInitDone = true;
+        onReady().catch(function(e) { console.error('Init error:', e); });
+      }
+    }, 100);
+  </script>
 </body>
 </html>

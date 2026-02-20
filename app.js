@@ -37,7 +37,9 @@ const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
 const STATS_RANGES = ['本回合', '所有局数', '最近100局', '最近500局', '最近1000局', '最近参与的1000局'];
 
 // ===== Initialization =====
-document.addEventListener('DOMContentLoaded', async () => {
+async function onReady() {
+  if (window._fllInitDone) return;
+  window._fllInitDone = true;
   loadSettings();
   applyTheme();
   applyFontScale();
@@ -60,7 +62,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(performHealthCheck, 30000);
   // Initial health check after 3s
   setTimeout(performHealthCheck, 3000);
-});
+}
+
+// Auto-call: handle both cases (DOM already loaded or not yet)
+console.log('[FLL] readyState:', document.readyState, 'onReady:', typeof onReady);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', onReady);
+} else {
+  onReady().catch(e => console.error('[FLL] onReady error:', e));
+}
 
 async function initApp() {
   AppState.lastCombo = API.getLastCombo();
