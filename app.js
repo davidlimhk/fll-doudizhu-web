@@ -11,6 +11,7 @@ const AppState = {
   players: [],
   scoreOptions: [],
   scriptVersion: '',
+  sheetUrl: '',
   isOnline: navigator.onLine,
   connectionStatus: 'unknown',
   pendingCount: 0,
@@ -573,6 +574,7 @@ async function handleSubmit() {
     } else {
       try {
         const result = await API.submitGame(submitData.landlord, submitData.farmer1, submitData.farmer2, submitData.score);
+        playSfx('success');
         showToast(t('toast_submit_success'), 'success');
         AppState.refreshToken++;
         startUndoTimer({ ...submitData, timestamp: result.timestamp });
@@ -808,7 +810,8 @@ async function loadHistory(reset = false) {
   if (footerEl) footerEl.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
 
   try {
-    const result = await API.fetchHistoryPage(h.offset, 50);
+    const batchSize = h.offset === 0 ? 200 : 100;
+    const result = await API.fetchHistoryPage(h.offset, batchSize);
     let games = result.data;
 
     if (h.offset === 0) {
@@ -1043,18 +1046,47 @@ function renderHistoryList() {
   if (footerEl) {
     if (h.hasMore) {
       footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory(false)">${t('history_load_more')}</div>`;
-      const historyPanel = document.getElementById('page-history');
-      if (historyPanel) {
-        historyPanel.onscroll = () => {
-          if (!h.loading && h.hasMore && historyPanel.scrollTop + historyPanel.clientHeight >= historyPanel.scrollHeight - 150) {
-            loadHistory(false);
-          }
-        };
-      }
     } else {
       footerEl.innerHTML = `<div class="history-footer">${t('history_loaded_all')} ${games.length} ${t('history_games_unit')}</div>`;
     }
   }
+
+  // Set up infinite scroll using IntersectionObserver on the footer
+  setupInfiniteScroll();
+}
+
+// ===== Infinite Scroll for History =====
+let _historyObserver = null;
+function setupInfiniteScroll() {
+  const footerEl = document.getElementById('history-footer');
+  const historyPanel = document.getElementById('page-history');
+  if (!footerEl || !historyPanel) return;
+
+  // Clean up previous observer
+  if (_historyObserver) {
+    _historyObserver.disconnect();
+    _historyObserver = null;
+  }
+
+  const h = AppState.history;
+  if (!h.hasMore) return;
+
+  // Use IntersectionObserver to detect when footer becomes visible
+  _historyObserver = new IntersectionObserver((entries) => {
+    const entry = entries[0];
+    if (entry && entry.isIntersecting) {
+      const h = AppState.history;
+      if (!h.loading && h.hasMore) {
+        loadHistory(false);
+      }
+    }
+  }, {
+    root: historyPanel,
+    rootMargin: '0px 0px 200px 0px', // trigger 200px before footer is visible
+    threshold: 0
+  });
+
+  _historyObserver.observe(footerEl);
 }
 
 function updateHistorySearch(query) {
@@ -1391,11 +1423,65 @@ function renderSettingsPage(container) {
   }
   html += `</div></div>`;
 
+  // Audio
+  html += `<div class="settings-section">
+    <div class="settings-section-title">${t('settings_audio')}</div>
+    <div class="settings-card">
+      <div class="settings-row">
+        <div style="flex:1">
+          <span class="settings-row-label">${t('settings_bgm')}</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" ${AppState.settings.bgm ? 'checked' : ''} onchange="toggleBgm(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div style="flex:1">
+          <span class="settings-row-label">${t('settings_sfx')}</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" ${AppState.settings.sfx ? 'checked' : ''} onchange="toggleSfx(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>`;
+
+  // Account
+  const authData = API.getAuthData();
+  html += `<div class="settings-section">
+    <div class="settings-section-title">${t('auth_logged_in_as').replace('\uff1a', '').replace(':', '')}</div>
+    <div class="settings-card">
+      ${authEmail ? `<div class="settings-row">
+        <span class="material-icons" style="font-size:24px;color:var(--muted);margin-right:8px">account_circle</span>
+        <span class="settings-row-label" style="flex:1">${authEmail}</span>
+      </div>` : ''}
+      ${authData.role ? `<div class="settings-row">
+        <span class="settings-row-label">${t('auth_permission_role')}</span>
+        <span class="settings-row-value" style="display:flex;align-items:center;gap:4px">
+          <span class="material-icons" style="font-size:16px;color:${authData.role === 'owner' ? 'var(--warning)' : 'var(--success)'}">${authData.role === 'owner' ? 'admin_panel_settings' : 'edit'}</span>
+          ${authData.role === 'owner' ? t('auth_role_owner') : t('auth_role_editor')}
+        </span>
+      </div>` : ''}
+      ${authData.verifiedAt ? `<div class="settings-row">
+        <span class="settings-row-label">${t('settings_login_validity')}</span>
+        <span class="settings-row-value" id="login-validity-text">${getLoginValidityText(authData.verifiedAt)}</span>
+      </div>` : ''}
+      <div class="settings-row" style="cursor:pointer" onclick="handleLogout()">
+        <span class="settings-row-label text-error" style="display:flex;align-items:center;gap:4px">
+          <span class="material-icons" style="font-size:18px">logout</span>
+          ${t('auth_relogin_settings')}
+        </span>
+        <span class="material-icons text-muted" style="font-size:20px">chevron_right</span>
+      </div>
+    </div>
+  </div>`;
+
   // About
   html += `<div class="settings-section">
     <div class="settings-section-title">${t('settings_about')}</div>
     <div class="settings-card">
-      ${authEmail ? `<div class="settings-row"><span class="settings-row-label">${t('auth_logged_in_as')}</span><span class="settings-row-value">${authEmail}</span></div>` : ''}
       <div class="settings-row">
         <span class="settings-row-label">${t('settings_app_version')}</span>
         <span class="settings-row-value">${APP_VERSION} (Web)</span>
@@ -1405,17 +1491,7 @@ function renderSettingsPage(container) {
         <span class="settings-row-value" id="script-version-text">${AppState.scriptVersion || t('common_loading')}</span>
       </div>
       <div class="settings-row">
-        <span class="settings-row-label" style="flex:1">${t('settings_about_desc_prefix')}Google Sheets${t('settings_about_desc_suffix')}</span>
-      </div>
-    </div>
-  </div>`;
-
-  // Auth
-  html += `<div class="settings-section">
-    <div class="settings-card">
-      <div class="settings-row" style="cursor:pointer" onclick="handleLogout()">
-        <span class="settings-row-label text-error">${t('auth_relogin_settings')}</span>
-        <span class="material-icons text-muted" style="font-size:20px">chevron_right</span>
+        <span class="settings-row-label" style="flex:1">${t('settings_about_desc_prefix')}<a id="sheet-url-link" href="#" target="_blank" style="color:var(--primary);text-decoration:underline">Google Sheets</a>${t('settings_about_desc_suffix')}</span>
       </div>
     </div>
   </div>`;
@@ -1429,6 +1505,82 @@ function renderSettingsPage(container) {
       const el = document.getElementById('script-version-text');
       if (el) el.textContent = v || t('common_unknown');
     });
+  }
+
+  // Load sheet URL for the hyperlink
+  if (!AppState.sheetUrl) {
+    API.getSheetUrl().then(url => {
+      if (url) {
+        AppState.sheetUrl = url;
+        const link = document.getElementById('sheet-url-link');
+        if (link) link.href = url;
+      }
+    });
+  } else {
+    const link = document.getElementById('sheet-url-link');
+    if (link) link.href = AppState.sheetUrl;
+  }
+}
+
+function getLoginValidityText(verifiedAt) {
+  if (!verifiedAt) return t('common_unknown');
+  const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  const expiresAt = parseInt(verifiedAt, 10) + CACHE_TTL;
+  if (expiresAt <= Date.now()) return t('auth_cache_expired');
+  const lang = AppState.settings.language;
+  const locale = lang === 'en' ? 'en-US' : lang === 'zh-CN' ? 'zh-CN' : 'zh-TW';
+  return new Date(expiresAt).toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+// ===== Audio =====
+let _bgmAudio = null;
+let _sfxTap = null;
+let _sfxCard = null;
+let _sfxSuccess = null;
+
+function initAudio() {
+  if (!_bgmAudio) {
+    _bgmAudio = new Audio('audio/bgm.mp3');
+    _bgmAudio.loop = true;
+    _bgmAudio.volume = 0.3;
+  }
+  if (!_sfxTap) {
+    _sfxTap = new Audio('audio/sfx_tap.mp3');
+    _sfxTap.volume = 0.5;
+  }
+  if (!_sfxCard) {
+    _sfxCard = new Audio('audio/sfx_card.mp3');
+    _sfxCard.volume = 0.5;
+  }
+  if (!_sfxSuccess) {
+    _sfxSuccess = new Audio('audio/sfx_success.mp3');
+    _sfxSuccess.volume = 0.5;
+  }
+}
+
+function toggleBgm(enabled) {
+  AppState.settings.bgm = enabled;
+  API.saveSettings(AppState.settings);
+  initAudio();
+  if (enabled) {
+    _bgmAudio.play().catch(() => {});
+  } else {
+    _bgmAudio.pause();
+  }
+}
+
+function toggleSfx(enabled) {
+  AppState.settings.sfx = enabled;
+  API.saveSettings(AppState.settings);
+}
+
+function playSfx(type) {
+  if (!AppState.settings.sfx) return;
+  initAudio();
+  const audio = type === 'tap' ? _sfxTap : type === 'card' ? _sfxCard : _sfxSuccess;
+  if (audio) {
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
   }
 }
 
@@ -1582,8 +1734,8 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   let legend = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;justify-content:center">';
   players.forEach((player, pIdx) => {
     const color = colors[pIdx % colors.length];
-    legend += `<span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)">
-      <span style="width:10px;height:3px;background:${color};border-radius:2px"></span>${player}
+    legend += `<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)">
+      <span style="width:8px;height:8px;background:${color};border-radius:50%;flex-shrink:0"></span>${player}
     </span>`;
   });
   legend += '</div>';
@@ -1700,5 +1852,45 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
   });
   legend += '</div>';
 
-  container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center">' + svg + legend + '</div>';
+  // Radar data table - show each player's 6 dimension raw values
+  let dataTable = '<div style="width:100%;margin-top:12px;padding:0 8px">';
+  const dimKeys = ['engagement', 'landlordRate', 'winRate', 'volatility', 'attack', 'defense'];
+  const dimLabelsTable = [
+    t('radar_engagement'), t('radar_landlord_rate'), t('radar_win_rate'),
+    t('radar_volatility'), t('radar_attack'), t('radar_defense'),
+  ];
+  const dimDescs = [
+    t('radar_desc_engagement'), t('radar_desc_landlord_rate'), t('radar_desc_win_rate'),
+    t('radar_desc_volatility'), t('radar_desc_attack'), t('radar_desc_defense'),
+  ];
+  players.forEach((player, pIdx) => {
+    const stats = allStats[player];
+    if (!stats) return;
+    const color = colors[pIdx % colors.length];
+    if (players.length > 1) {
+      dataTable += `<div style="display:flex;align-items:center;gap:6px;margin-top:12px;margin-bottom:4px">
+        <span style="width:10px;height:10px;background:${color};border-radius:50%;flex-shrink:0"></span>
+        <span style="font-size:13px;font-weight:600;color:var(--fg)">${player}</span>
+      </div>`;
+    }
+    dimKeys.forEach((key, i) => {
+      let value = '';
+      if (key === 'engagement') value = stats.engagement + t('radar_games_unit');
+      else if (key === 'landlordRate') value = (stats.landlordRate * 100).toFixed(1) + '%';
+      else if (key === 'winRate') value = (stats.winRate * 100).toFixed(1) + '%';
+      else if (key === 'volatility') value = (stats.volatility * 100).toFixed(1) + '%';
+      else if (key === 'attack') value = (stats.attack * 100).toFixed(1) + '%';
+      else if (key === 'defense') value = (stats.defense * 100).toFixed(1) + '%';
+      dataTable += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">
+        <div style="flex:1;margin-right:8px">
+          <div style="font-size:13px;font-weight:600;color:var(--fg)">${dimLabelsTable[i]}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">${dimDescs[i]}</div>
+        </div>
+        <div style="font-size:14px;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums;text-align:right;min-width:60px">${value}</div>
+      </div>`;
+    });
+  });
+  dataTable += '</div>';
+
+  container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center">' + svg + legend + '</div>' + dataTable;
 }

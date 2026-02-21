@@ -138,7 +138,7 @@ html, body {
 /* ===== Card ===== */
 .card {
   background: var(--surface);
-  border: 0.5px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -148,7 +148,7 @@ html, body {
 .form-row {
   display: flex;
   align-items: center;
-  border-bottom: 0.5px solid var(--border);
+  border-bottom: 1.5px solid var(--border);
   min-height: calc(48px * var(--font-scale));
 }
 
@@ -172,7 +172,7 @@ html, body {
 .half-row:active { background: var(--border); opacity: 0.7; }
 
 .half-divider {
-  width: 0.5px;
+  width: 1.5px;
   align-self: stretch;
   background: var(--border);
   margin: 8px 0;
@@ -776,7 +776,7 @@ html, body {
 
 .chart-container canvas { display: block; }
 
-.radar-section { margin-top: 24px; display: flex; flex-direction: column; align-items: center; }
+.radar-section { margin-top: 24px; display: flex; flex-direction: column; align-items: stretch; }
 
 /* Player Picker Modal (Stats) */
 .player-picker-content {

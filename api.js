@@ -492,6 +492,15 @@ const API = {
     }
   },
 
+  // ===== Sheet URL =====
+  async getSheetUrl() {
+    try {
+      const data = await this.fetchFromWebApp('getSheetUrl');
+      if (data.url) return data.url;
+    } catch {}
+    return null;
+  },
+
   // ===== Settings =====
   getSettings() {
     try {
