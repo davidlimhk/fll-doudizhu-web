@@ -32,7 +32,8 @@ const AppState = {
   stats: { range: '本回合', data: [], loading: false, historyGames: [], selectedPlayers: [], loadingHistory: false },
 };
 
-const APP_VERSION = 'v2.0.58';
+const APP_VERSION = 'v2.0.59';
+const GOOGLE_CLIENT_ID = '816020476016-r670uelh69npagn3hj7cu5odd2sv0s2u.apps.googleusercontent.com';
 const UNDO_WINDOW_MS = 60000;
 const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
 const STATS_RANGES = ['本回合', '所有局数', '最近100局', '最近500局', '最近1000局', '最近参与的1000局'];
@@ -48,7 +49,15 @@ async function onReady() {
   applyFontScale();
   updateTabLabels();
 
-  window.addEventListener('online', () => { AppState.isOnline = true; delete AppState._tabRenderedToken[AppState.currentTab]; renderTab(AppState.currentTab); });
+  window.addEventListener('online', () => {
+    AppState.isOnline = true;
+    delete AppState._tabRenderedToken[AppState.currentTab];
+    renderTab(AppState.currentTab);
+    // Auto-sync on network recovery (matching APK)
+    if (authPhase === 'authorized') {
+      performHealthCheck();
+    }
+  });
   window.addEventListener('offline', () => { AppState.isOnline = false; delete AppState._tabRenderedToken[AppState.currentTab]; renderTab(AppState.currentTab); });
 
   // Start splash screen
@@ -119,7 +128,7 @@ async function performHealthCheck() {
     if (result.ok) {
       AppState.connectionStatus = result.latencyMs > 3000 ? 'slow' : 'normal';
       AppState.isOnline = true;
-      // Auto-sync pending
+      // Auto-sync pending (matching APK attemptAutoSync)
       const pending = API.getPendingSubmissions();
       if (pending.length > 0) {
         const syncResult = await API.syncPendingSubmissions();
@@ -127,8 +136,13 @@ async function performHealthCheck() {
         if (syncResult.synced > 0) {
           AppState.refreshToken++;
           showToast(t('toast_sync_success').replace('{count}', syncResult.synced), 'success');
+          // Re-render current tab to reflect synced data
+          AppState._tabRenderedToken = {};
+          renderTab(AppState.currentTab);
         }
       }
+      // Update server status UI if on settings page
+      updateServerStatusUI();
     } else {
       AppState.connectionStatus = 'failed';
       AppState.isOnline = false;
@@ -295,21 +309,14 @@ function showAuthContent_Login() {
   const content = document.getElementById('auth-content');
   if (!content) return;
   content.innerHTML = `
-    <input type="email" id="auth-email-input" class="auth-email-input" placeholder="Google Email" autocomplete="email" autocapitalize="off">
-    <button class="auth-btn-primary" id="auth-login-btn" onclick="handleLogin()">
-      <span class="material-icons" style="font-size:20px">login</span>
-      <span>${t('auth_login_button')}</span>
+    <button class="auth-google-btn" id="auth-google-btn" onclick="handleGoogleLogin()">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      <span>${t('auth_google_signin')}</span>
     </button>
     <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
   `;
   content.classList.remove('hidden');
   setTimeout(() => content.classList.add('visible'), 50);
-  // Enter key on email input
-  const emailInput = document.getElementById('auth-email-input');
-  if (emailInput) {
-    emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
-    emailInput.focus();
-  }
 }
 
 function showAuthContent_Checking(email) {
@@ -391,19 +398,84 @@ async function transitionToAuthorized() {
   }
 }
 
-async function handleLogin() {
-  const loginBtn = document.getElementById('auth-login-btn');
-  const emailInput = document.getElementById('auth-email-input');
-  if (loginBtn) loginBtn.disabled = true;
+// Google Sign-In handler
+function handleGoogleLogin() {
+  const btn = document.getElementById('auth-google-btn');
+  if (btn) btn.disabled = true;
 
-  const email = emailInput ? emailInput.value.trim() : '';
-  if (!email || !email.includes('@')) {
-    if (loginBtn) loginBtn.disabled = false;
-    showToast(t('auth_invalid_email') || 'Please enter a valid email address', 'error');
+  if (typeof google === 'undefined' || !google.accounts) {
+    // GIS not loaded yet, retry after a short delay
+    showToast(t('auth_google_signin_loading'), 'info');
+    setTimeout(() => {
+      if (btn) btn.disabled = false;
+      handleGoogleLogin();
+    }, 1500);
     return;
   }
 
-  // Transition to checking phase
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredentialResponse,
+    auto_select: false,
+  });
+
+  google.accounts.id.prompt((notification) => {
+    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+      // One Tap not available, use popup
+      google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'email profile',
+        callback: handleGoogleTokenResponse,
+      }).requestAccessToken();
+    }
+  });
+}
+
+// Handle Google One Tap credential response (JWT)
+function handleGoogleCredentialResponse(response) {
+  try {
+    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+    const email = payload.email;
+    if (email) {
+      proceedWithGoogleEmail(email);
+    } else {
+      showToast(t('auth_invalid_email'), 'error');
+      showAuthContent_Login();
+    }
+  } catch (err) {
+    console.error('[Auth] Failed to decode Google credential:', err);
+    showToast(t('auth_check_failed'), 'error');
+    showAuthContent_Login();
+  }
+}
+
+// Handle Google OAuth2 token response (access token)
+async function handleGoogleTokenResponse(tokenResponse) {
+  if (!tokenResponse || !tokenResponse.access_token) {
+    showToast(t('auth_check_failed'), 'error');
+    showAuthContent_Login();
+    return;
+  }
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: 'Bearer ' + tokenResponse.access_token },
+    });
+    const userInfo = await res.json();
+    if (userInfo.email) {
+      proceedWithGoogleEmail(userInfo.email);
+    } else {
+      showToast(t('auth_invalid_email'), 'error');
+      showAuthContent_Login();
+    }
+  } catch (err) {
+    console.error('[Auth] Failed to get Google user info:', err);
+    showToast(t('auth_check_failed'), 'error');
+    showAuthContent_Login();
+  }
+}
+
+// Common flow after getting email from Google
+async function proceedWithGoogleEmail(email) {
   authPhase = 'checking';
   showAuthContent_Checking(email);
 
@@ -446,22 +518,6 @@ async function retryAuthCheck() {
     authPhase = 'check_failed';
     showAuthContent_CheckFailed(email, err.message);
   }
-}
-
-function handleLogout() {
-  API.clearAuth();
-  // Reset main app
-  const mainApp = document.getElementById('main-app');
-  if (mainApp) mainApp.classList.add('hidden');
-  // Reset tab rendered tokens
-  AppState._tabRenderedToken = {};
-  // Show splash for 2s then login
-  authPhase = 'splash';
-  showAuthGate();
-  setTimeout(() => {
-    authPhase = 'login';
-    showAuthContent_Login();
-  }, 2000);
 }
 
 // ===== Picker Modal =====
@@ -1772,7 +1828,7 @@ function renderSettingsPage(container) {
     </div>
   </div>`;
 
-  // Server Status (with 30s auto-test countdown, matching APK)
+  // Server Status (no countdown, spinner on button when testing)
   html += `<div class="settings-section">
     <div class="settings-section-title">${t('settings_server_status')}</div>
     <div class="settings-card">
@@ -1782,8 +1838,7 @@ function renderSettingsPage(container) {
           <span id="server-status-text" style="font-weight:600;color:var(--${AppState.connectionStatus === 'normal' ? 'success' : AppState.connectionStatus === 'slow' ? 'warning' : AppState.connectionStatus === 'failed' ? 'error' : 'muted'})">${getServerStatusText()}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
-          <span id="server-countdown" style="color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums">${_serverCountdown}s</span>
-          <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" ${_serverTesting ? 'disabled' : ''}>${_serverTesting ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>' : t('settings_server_test_button')}</button>
+          <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" ${_serverTesting ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>${_serverTesting ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>' : t('settings_server_test_button')}</button>
         </div>
       </div>
     </div>
@@ -1960,9 +2015,6 @@ function startServerCountdown() {
   if (_serverCountdownTimer) clearInterval(_serverCountdownTimer);
   _serverCountdownTimer = setInterval(() => {
     _serverCountdown--;
-    // Update countdown display without re-rendering the whole page
-    const el = document.getElementById('server-countdown');
-    if (el) el.textContent = _serverCountdown + 's';
     if (_serverCountdown <= 0) {
       clearInterval(_serverCountdownTimer);
       _serverCountdownTimer = null;
@@ -1982,6 +2034,21 @@ async function runServerTest() {
   _serverTesting = false;
   updateServerStatusUI();
   startServerCountdown();
+
+  // Auto-sync pending records after successful server test (matching APK)
+  if (result.ok) {
+    const pending = API.getPendingSubmissions();
+    if (pending.length > 0) {
+      const syncResult = await API.syncPendingSubmissions();
+      updatePendingBadge();
+      if (syncResult.synced > 0) {
+        AppState.refreshToken++;
+        showToast(t('toast_sync_success').replace('{count}', syncResult.synced), 'success');
+        AppState._tabRenderedToken = {};
+        renderTab(AppState.currentTab);
+      }
+    }
+  }
 }
 
 function handleManualServerTest() {
@@ -1995,7 +2062,6 @@ function handleManualServerTest() {
 function updateServerStatusUI() {
   const statusText = document.getElementById('server-status-text');
   const statusDot = document.getElementById('server-status-dot');
-  const countdownEl = document.getElementById('server-countdown');
   const testBtn = document.getElementById('server-test-btn');
 
   const statusColor = AppState.connectionStatus === 'normal' ? 'var(--success)'
@@ -2008,9 +2074,10 @@ function updateServerStatusUI() {
     statusText.style.color = statusColor;
   }
   if (statusDot) statusDot.className = `status-dot ${getServerStatusClass()}`;
-  if (countdownEl) countdownEl.textContent = _serverTesting ? '...' : _serverCountdown + 's';
   if (testBtn) {
     testBtn.disabled = _serverTesting;
+    testBtn.style.opacity = _serverTesting ? '0.5' : '1';
+    testBtn.style.cursor = _serverTesting ? 'not-allowed' : 'pointer';
     testBtn.innerHTML = _serverTesting
       ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>'
       : t('settings_server_test_button');
@@ -2036,7 +2103,24 @@ function forceClearPending() {
 
 function handleLogout() {
   API.clearAuth();
-  showLoginScreen();
+  // Revoke Google session if GIS is loaded
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+  }
+  // Stop server test timer
+  if (_serverCountdownTimer) { clearInterval(_serverCountdownTimer); _serverCountdownTimer = null; }
+  // Reset main app
+  const mainApp = document.getElementById('main-app');
+  if (mainApp) mainApp.classList.add('hidden');
+  // Reset tab rendered tokens
+  AppState._tabRenderedToken = {};
+  // Show splash for 2s then login (matching APK)
+  authPhase = 'splash';
+  showAuthGate();
+  setTimeout(() => {
+    authPhase = 'login';
+    showAuthContent_Login();
+  }, 2000);
 }
 
 // ===== CHARTS =====
