@@ -292,6 +292,7 @@ html, body {
 .clear-btn .material-icons { font-size: calc(16px * var(--font-scale)); }
 
 /* ===== Quick Reuse Button ===== */
+.quick-reuse-btn.hidden { display: none; }
 .quick-reuse-btn {
   display: flex;
   align-items: center;

@@ -305,59 +305,16 @@ function renderScorePage(container) {
   html += `<h1 class="page-title">${t('score_title')}</h1>`;
 
   // Quick reuse button
-  if (AppState.lastCombo && !s.landlord && !s.farmer1 && !s.farmer2) {
-    html += `<div class="quick-reuse-btn" onclick="applyLastCombo()">
+  if (AppState.lastCombo) {
+    const reuseHidden = (s.landlord || s.farmer1 || s.farmer2) ? ' hidden' : '';
+    html += `<div id="quick-reuse-banner" class="quick-reuse-btn${reuseHidden}" onclick="applyLastCombo()">
       <span class="material-icons">replay</span>
       <span>${t('score_last_game')} ${AppState.lastCombo.landlord} / ${AppState.lastCombo.farmer1} / ${AppState.lastCombo.farmer2}</span>
     </div>`;
   }
 
-  // Input form card
-  html += `<div class="card">
-    <div class="form-row">
-      <div class="half-row" onclick="openPlayerPicker('landlord')">
-        <span class="form-label">🎩 ${t('score_landlord')}</span>
-        <span class="${s.landlord ? 'form-value' : 'form-value placeholder'}">${s.landlord || t('score_select_short')}</span>
-        <span class="chevron">›</span>
-      </div>
-      <div class="half-divider"></div>
-      <div class="half-row" onclick="openScorePicker()">
-        <span class="form-label">🎯 ${t('score_score_label')}</span>
-        <span class="${scoreClass}">${s.selectedScore !== null ? s.selectedScore : t('score_select_short')}</span>
-        <span class="chevron">›</span>
-      </div>
-    </div>
-    <div class="form-row-last">
-      <div class="half-row" onclick="openPlayerPicker('farmer1')">
-        <span class="form-label-farmer">🐖 ${t('score_farmer1')}</span>
-        ${s.farmer1 ? `<button class="swap-btn-inline" onclick="event.stopPropagation(); swapToLandlord('farmer1')"><span class="material-icons">swap_vert</span></button>` : '<div class="swap-placeholder"></div>'}
-        <span class="${s.farmer1 ? 'form-value-farmer' : 'form-value-farmer placeholder'}">${s.farmer1 || t('score_select_short')}</span>
-        <span class="chevron">›</span>
-      </div>
-      <div class="half-divider"></div>
-      <div class="half-row" onclick="openPlayerPicker('farmer2')">
-        <span class="form-label-farmer">🐓 ${t('score_farmer2')}</span>
-        ${s.farmer2 ? `<button class="swap-btn-inline" onclick="event.stopPropagation(); swapToLandlord('farmer2')"><span class="material-icons">swap_vert</span></button>` : '<div class="swap-placeholder"></div>'}
-        <span class="${s.farmer2 ? 'form-value-farmer' : 'form-value-farmer placeholder'}">${s.farmer2 || t('score_select_short')}</span>
-        <span class="chevron">›</span>
-      </div>
-    </div>
-  </div>`;
-
-  if (farmerScore !== null) {
-    html += `<div class="farmer-preview">${t('score_farmer_preview')} ${farmerScore}</div>`;
-  }
-
-  html += `<div class="button-row">
-    <button class="submit-btn" onclick="handleSubmit()" ${AppState.score._submitting ? 'disabled' : ''}>
-      <span class="material-icons">send</span>
-      ${AppState.score._submitting ? t('score_submitting') : t('score_submit')}
-    </button>
-    <button class="clear-btn" onclick="handleClear()">
-      <span class="material-icons">refresh</span>
-      ${t('score_reset')}
-    </button>
-  </div>`;
+  // Input form card — wrapped in a div with id for targeted updates
+  html += `<div id="score-form-area">${buildScoreFormHTML(s, scoreClass, farmerScore)}</div>`;
 
   if (pending.length > 0) {
     html += `<div class="pending-panel">
@@ -445,6 +402,82 @@ async function loadRoundSummary() {
   }
 }
 
+// Build just the form card + buttons HTML (no round summary)
+function buildScoreFormHTML(s, scoreClass, farmerScore) {
+  let html = `<div class="card">
+    <div class="form-row">
+      <div class="half-row" onclick="openPlayerPicker('landlord')">
+        <span class="form-label">🎩 ${t('score_landlord')}</span>
+        <span class="${s.landlord ? 'form-value' : 'form-value placeholder'}">${s.landlord || t('score_select_short')}</span>
+        <span class="chevron">›</span>
+      </div>
+      <div class="half-divider"></div>
+      <div class="half-row" onclick="openScorePicker()">
+        <span class="form-label">🎯 ${t('score_score_label')}</span>
+        <span class="${scoreClass}">${s.selectedScore !== null ? s.selectedScore : t('score_select_short')}</span>
+        <span class="chevron">›</span>
+      </div>
+    </div>
+    <div class="form-row-last">
+      <div class="half-row" onclick="openPlayerPicker('farmer1')">
+        <span class="form-label-farmer">🐖 ${t('score_farmer1')}</span>
+        ${s.farmer1 ? `<button class="swap-btn-inline" onclick="event.stopPropagation(); swapToLandlord('farmer1')"><span class="material-icons">swap_vert</span></button>` : '<div class="swap-placeholder"></div>'}
+        <span class="${s.farmer1 ? 'form-value-farmer' : 'form-value-farmer placeholder'}">${s.farmer1 || t('score_select_short')}</span>
+        <span class="chevron">›</span>
+      </div>
+      <div class="half-divider"></div>
+      <div class="half-row" onclick="openPlayerPicker('farmer2')">
+        <span class="form-label-farmer">🐓 ${t('score_farmer2')}</span>
+        ${s.farmer2 ? `<button class="swap-btn-inline" onclick="event.stopPropagation(); swapToLandlord('farmer2')"><span class="material-icons">swap_vert</span></button>` : '<div class="swap-placeholder"></div>'}
+        <span class="${s.farmer2 ? 'form-value-farmer' : 'form-value-farmer placeholder'}">${s.farmer2 || t('score_select_short')}</span>
+        <span class="chevron">›</span>
+      </div>
+    </div>
+  </div>`;
+
+  if (farmerScore !== null) {
+    html += `<div class="farmer-preview">${t('score_farmer_preview')} ${farmerScore}</div>`;
+  }
+
+  html += `<div class="button-row">
+    <button class="submit-btn" onclick="handleSubmit()" ${AppState.score._submitting ? 'disabled' : ''}>
+      <span class="material-icons">send</span>
+      ${AppState.score._submitting ? t('score_submitting') : t('score_submit')}
+    </button>
+    <button class="clear-btn" onclick="handleClear()">
+      <span class="material-icons">refresh</span>
+      ${t('score_reset')}
+    </button>
+  </div>`;
+
+  return html;
+}
+
+// Update only the form area without re-rendering the entire page or re-fetching data
+function updateScoreFormUI() {
+  const formArea = document.getElementById('score-form-area');
+  if (!formArea) { renderCurrentTab(); return; }
+
+  const s = AppState.score;
+  const farmerScore = s.selectedScore !== null ? -s.selectedScore / 2 : null;
+  let scoreClass = 'form-value placeholder';
+  if (s.selectedScore !== null) {
+    scoreClass = s.selectedScore > 0 ? 'form-value score-positive' : s.selectedScore < 0 ? 'form-value score-negative' : 'form-value score-zero';
+  }
+
+  formArea.innerHTML = buildScoreFormHTML(s, scoreClass, farmerScore);
+
+  // Also update the quick-reuse banner visibility
+  const reuseEl = document.getElementById('quick-reuse-banner');
+  if (reuseEl) {
+    if (AppState.lastCombo && !s.landlord && !s.farmer1 && !s.farmer2) {
+      reuseEl.classList.remove('hidden');
+    } else {
+      reuseEl.classList.add('hidden');
+    }
+  }
+}
+
 function openPlayerPicker(target) {
   const s = AppState.score;
   const selected = [];
@@ -456,7 +489,7 @@ function openPlayerPicker(target) {
   const title = target === 'landlord' ? t('score_select_landlord') : target === 'farmer1' ? t('score_select_farmer1') : t('score_select_farmer2');
   openPicker(title, available.map(p => ({ label: p, value: p })), s[target], (val) => {
     AppState.score[target] = val;
-    renderCurrentTab();
+    updateScoreFormUI();
   });
 }
 
@@ -464,7 +497,7 @@ function openScorePicker() {
   openPicker(t('score_select_score_title'),
     AppState.scoreOptions.map(s => ({ label: String(s), value: s })),
     AppState.score.selectedScore,
-    (val) => { AppState.score.selectedScore = Number(val); renderCurrentTab(); }
+    (val) => { AppState.score.selectedScore = Number(val); updateScoreFormUI(); }
   );
 }
 
@@ -476,7 +509,7 @@ function swapToLandlord(which) {
     const old = s.landlord; s.landlord = s.farmer2; s.farmer2 = old;
   }
   s.selectedScore = null;
-  renderCurrentTab();
+  updateScoreFormUI();
 }
 
 function applyLastCombo() {
@@ -485,12 +518,12 @@ function applyLastCombo() {
   AppState.score.farmer1 = AppState.lastCombo.farmer1;
   AppState.score.farmer2 = AppState.lastCombo.farmer2;
   AppState.score.selectedScore = null;
-  renderCurrentTab();
+  updateScoreFormUI();
 }
 
 function handleClear() {
   AppState.score = { landlord: '', farmer1: '', farmer2: '', selectedScore: null };
-  renderCurrentTab();
+  updateScoreFormUI();
 }
 
 let lastSubmitTime = 0;
@@ -508,7 +541,7 @@ async function handleSubmit() {
   }
 
   s._submitting = true;
-  renderCurrentTab();
+  updateScoreFormUI();
 
   const submitData = { landlord: s.landlord, farmer1: s.farmer1, farmer2: s.farmer2, score: s.selectedScore };
 
@@ -540,6 +573,7 @@ async function handleSubmit() {
     showToast(err.message || t('toast_submit_failed'), 'error');
   } finally {
     s._submitting = false;
+    // Full re-render only once after submit completes, to refresh round summary
     renderCurrentTab();
   }
 }
@@ -1295,7 +1329,7 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   svg += `<text x="${width / 2}" y="${height - 4}" text-anchor="middle" fill="var(--muted)" font-size="10">${t('trend_x_label')}</text>`;
   svg += '</svg>';
 
-  let legend = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;margin-bottom:8px">';
+  let legend = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;justify-content:center">';
   players.forEach((player, pIdx) => {
     const color = colors[pIdx % colors.length];
     legend += `<span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)">
@@ -1304,7 +1338,9 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   });
   legend += '</div>';
 
-  container.innerHTML = legend + svg;
+  // Title above chart, legend below chart (centered)
+  const chartTitle = title ? `<div style="font-size:calc(14px * var(--font-scale));font-weight:600;color:var(--foreground);margin-bottom:8px">${title}</div>` : '';
+  container.innerHTML = chartTitle + svg + legend;
 }
 
 function renderRadarChart(container, games, allPlayers, selectedPlayers) {
