@@ -920,6 +920,7 @@ async function handleSubmit() {
     if (!AppState.isOnline || AppState.connectionStatus === 'failed') {
       API.addPendingSubmission({ ...submitData, landlordScore: submitData.score });
       updatePendingBadge();
+      AppState.refreshToken++;
       showToast(t('toast_offline_saved'), 'info');
       startUndoTimer({ ...submitData, isOffline: true, pendingId: API.getPendingSubmissions().slice(-1)[0]?.id });
     } else {
@@ -934,6 +935,7 @@ async function handleSubmit() {
       } catch (err) {
         API.addPendingSubmission({ ...submitData, landlordScore: submitData.score });
         updatePendingBadge();
+        AppState.refreshToken++;
         showToast(t('toast_network_error_saved'), 'info');
         startUndoTimer({ ...submitData, isOffline: true, pendingId: API.getPendingSubmissions().slice(-1)[0]?.id });
       }
@@ -948,7 +950,8 @@ async function handleSubmit() {
   } finally {
     s._submitting = false;
     // Force re-render score page to refresh round summary
-    delete AppState._tabRenderedToken['score'];
+    // Also invalidate all other tabs so they pick up pending data on next visit
+    AppState._tabRenderedToken = {};
     renderTab('score');
   }
 }
@@ -2342,9 +2345,25 @@ async function handleRefreshAllData() {
   AppState._historyFirstRender = true;
   // Perform full data load (forces no-cache path)
   await preloadAllData();
-  // Re-render all tabs
+  // Re-render all tabs - not just current tab, but also pre-render score and stats
+  // so they have fresh data immediately when user switches to them
   AppState._tabRenderedToken = {};
+  // Render current tab (history) first for immediate visual feedback
   renderCurrentTab();
+  // Also pre-render score and stats pages in background so data is ready
+  // Use setTimeout to avoid blocking the UI
+  setTimeout(() => {
+    const scoreContainer = document.getElementById('page-score');
+    if (scoreContainer) {
+      renderScorePage(scoreContainer);
+      AppState._tabRenderedToken['score'] = AppState.refreshToken;
+    }
+    const statsContainer = document.getElementById('page-stats');
+    if (statsContainer) {
+      renderStatsPage(statsContainer);
+      AppState._tabRenderedToken['stats'] = AppState.refreshToken;
+    }
+  }, 100);
 }
 
 function handleLogout() {
