@@ -32,7 +32,7 @@ const AppState = {
   stats: { range: '本回合', data: [], loading: false, historyGames: [], selectedPlayers: [], loadingHistory: false },
 };
 
-const APP_VERSION = 'v2.0.62';
+const APP_VERSION = 'v2.0.63';
 const GOOGLE_CLIENT_ID = '816020476016-r670uelh69npagn3hj7cu5odd2sv0s2u.apps.googleusercontent.com';
 const UNDO_WINDOW_MS = 60000;
 const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
@@ -362,9 +362,9 @@ function showAuthGate() {
 
 function showAuthContent_Login() {
   const logoGroup = document.getElementById('auth-logo-group');
-  if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
   const content = document.getElementById('auth-content');
   if (!content) return;
+  // Prepare content while still hidden
   content.innerHTML = `
     <button class="auth-google-btn" id="auth-google-btn" onclick="handleGoogleLogin()">
       <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
@@ -373,22 +373,31 @@ function showAuthContent_Login() {
     <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
   `;
   content.classList.remove('hidden');
-  // Wait for logo slide-up animation to mostly complete before fading in content
-  setTimeout(() => content.classList.add('visible'), 400);
+  // Use rAF to ensure the logo shift happens in a clean paint frame
+  requestAnimationFrame(() => {
+    if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
+    // Delay content fade-in until logo animation is well underway
+    setTimeout(() => content.classList.add('visible'), 500);
+  });
 }
 
 function showAuthContent_Checking(email) {
   const logoGroup = document.getElementById('auth-logo-group');
-  if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
   const content = document.getElementById('auth-content');
   if (!content) return;
+  // Prepare content while still hidden
   content.innerHTML = `
     <div class="auth-spinner"></div>
     <div class="auth-status-text">${t('auth_checking') || '正在檢查權限...'}</div>
     <div class="auth-email-text">${email}</div>
   `;
   content.classList.remove('hidden');
-  setTimeout(() => content.classList.add('visible'), 400);
+  // Use rAF to ensure the logo shift and content fade happen in separate frames
+  requestAnimationFrame(() => {
+    if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
+    // Delay content fade-in until logo animation is well underway
+    setTimeout(() => content.classList.add('visible'), 500);
+  });
 }
 
 function showAuthContent_CheckFailed(email, errorMsg) {
@@ -396,20 +405,24 @@ function showAuthContent_CheckFailed(email, errorMsg) {
   if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
   const content = document.getElementById('auth-content');
   if (!content) return;
-  content.innerHTML = `
-    <div class="auth-error-text">${errorMsg || t('auth_check_failed') || '無法連接伺服器'}</div>
-    <div class="auth-email-text">${email}</div>
-    <button class="auth-btn-primary" onclick="retryAuthCheck()">
-      <span class="material-icons" style="font-size:20px">refresh</span>
-      <span>${t('auth_retry') || '重試'}</span>
-    </button>
-    <button class="auth-btn-secondary" onclick="handleLogout()">
-      <span class="material-icons" style="font-size:20px">logout</span>
-      <span>${t('settings_logout') || '登出'}</span>
-    </button>
-  `;
-  content.classList.remove('hidden');
-  setTimeout(() => content.classList.add('visible'), 400);
+  // Brief fade-out before swapping content
+  content.classList.remove('visible');
+  setTimeout(() => {
+    content.innerHTML = `
+      <div class="auth-error-text">${errorMsg || t('auth_check_failed') || '無法連接伺服器'}</div>
+      <div class="auth-email-text">${email}</div>
+      <button class="auth-btn-primary" onclick="retryAuthCheck()">
+        <span class="material-icons" style="font-size:20px">refresh</span>
+        <span>${t('auth_retry') || '重試'}</span>
+      </button>
+      <button class="auth-btn-secondary" onclick="handleLogout()">
+        <span class="material-icons" style="font-size:20px">logout</span>
+        <span>${t('settings_logout') || '登出'}</span>
+      </button>
+    `;
+    content.classList.remove('hidden');
+    requestAnimationFrame(() => content.classList.add('visible'));
+  }, 200);
 }
 
 function showAuthContent_Denied(email) {
@@ -417,24 +430,28 @@ function showAuthContent_Denied(email) {
   if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
   const content = document.getElementById('auth-content');
   if (!content) return;
-  content.innerHTML = `
-    <div class="auth-lock-icon"><span class="material-icons" style="font-size:48px">lock</span></div>
-    <div class="auth-user-card">
-      <div class="auth-user-card-email">${email}</div>
-      <div class="auth-user-card-role">${t('auth_no_access') || '沒有編輯權限'}</div>
-    </div>
-    <div class="auth-status-text" style="margin-bottom:24px">${t('auth_denied_msg') || '你沒有此 Google Sheet 的編輯權限。請聯繫管理員授權。'}</div>
-    <button class="auth-btn-primary" onclick="retryAuthCheck()">
-      <span class="material-icons" style="font-size:20px">refresh</span>
-      <span>${t('auth_recheck') || '重新檢查'}</span>
-    </button>
-    <button class="auth-btn-secondary" onclick="handleLogout()">
-      <span class="material-icons" style="font-size:20px">swap_horiz</span>
-      <span>${t('auth_switch_account') || '切換帳號'}</span>
-    </button>
-  `;
-  content.classList.remove('hidden');
-  setTimeout(() => content.classList.add('visible'), 400);
+  // Brief fade-out before swapping content
+  content.classList.remove('visible');
+  setTimeout(() => {
+    content.innerHTML = `
+      <div class="auth-lock-icon"><span class="material-icons" style="font-size:48px">lock</span></div>
+      <div class="auth-user-card">
+        <div class="auth-user-card-email">${email}</div>
+        <div class="auth-user-card-role">${t('auth_no_access') || '沒有編輯權限'}</div>
+      </div>
+      <div class="auth-status-text" style="margin-bottom:24px">${t('auth_denied_msg') || '你沒有此 Google Sheet 的編輯權限。請聯繫管理員授權。'}</div>
+      <button class="auth-btn-primary" onclick="retryAuthCheck()">
+        <span class="material-icons" style="font-size:20px">refresh</span>
+        <span>${t('auth_recheck') || '重新檢查'}</span>
+      </button>
+      <button class="auth-btn-secondary" onclick="handleLogout()">
+        <span class="material-icons" style="font-size:20px">swap_horiz</span>
+        <span>${t('auth_switch_account') || '切換帳號'}</span>
+      </button>
+    `;
+    content.classList.remove('hidden');
+    requestAnimationFrame(() => content.classList.add('visible'));
+  }, 200);
 }
 
 async function transitionToAuthorized() {

@@ -1098,8 +1098,9 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   transition: opacity 0.5s ease;
+  overflow: hidden;
 }
 
 .auth-gate.fade-out {
@@ -1130,7 +1131,9 @@ html, body {
   align-items: center;
   will-change: transform;
   transform: translateZ(0);
-  transition: transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1);
+  transition: transform 1s cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* Position logo at vertical center of screen using margin */
+  margin-top: 38vh;
 }
 
 .auth-logo-center {
@@ -1138,7 +1141,7 @@ html, body {
 }
 
 .auth-logo-shifted {
-  transform: translateY(-40px) translateZ(0);
+  transform: translateY(-60px) translateZ(0);
 }
 
 .auth-avatar {
