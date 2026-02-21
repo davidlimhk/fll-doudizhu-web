@@ -213,7 +213,7 @@ if (!AppState._tabRenderedToken) AppState._tabRenderedToken = {};
 const TAB_ORDER = ['score', 'history', 'stats', 'settings'];
 
 function switchTab(tab, direction) {
-  playSfx('tap');
+  playSfx('click');
   const prevTab = AppState.currentTab;
   AppState.currentTab = tab;
   // Update tab bar active state
@@ -582,7 +582,7 @@ function openPicker(title, items, selectedValue, callback) {
 }
 
 function selectPickerItem(value) {
-  playSfx('tap');
+  playSfx('click');
   if (pickerCallback) pickerCallback(value);
   closePicker();
 }
@@ -838,7 +838,7 @@ function applyLastCombo() {
 }
 
 function handleClear() {
-  playSfx('tap');
+  playSfx('click');
   AppState.score = { landlord: '', farmer1: '', farmer2: '', selectedScore: null };
   updateScoreFormUI();
 }
@@ -960,7 +960,7 @@ function clearUndoTimer() {
 }
 
 async function handleUndo() {
-  playSfx('tap');
+  playSfx('click');
   const info = AppState.undoInfo;
   if (!info) return;
 
@@ -1074,7 +1074,7 @@ function formatPendingTime(timestamp) {
 
 function toggleSyncExpanded() {
   _pendingSyncExpanded = !_pendingSyncExpanded;
-  playSfx('tap');
+  playSfx('click');
   // Re-render current tab to update the panel
   AppState._tabRenderedToken = {};
   renderTab(AppState.currentTab);
@@ -1083,7 +1083,7 @@ function toggleSyncExpanded() {
 async function handleSyncPending() {
   if (_pendingSyncing) return;
   _pendingSyncing = true;
-  playSfx('tap');
+  playSfx('click');
   // Update UI to show syncing state
   AppState._tabRenderedToken = {};
   renderTab(AppState.currentTab);
@@ -1786,7 +1786,7 @@ function renderStatsContent(contentEl) {
 }
 
 function changeStatsRange(range) {
-  playSfx('tap');
+  playSfx('click');
   AppState.stats.range = range;
   // Force re-render stats page (refreshToken hasn't changed, but range did)
   delete AppState._tabRenderedToken['stats'];
@@ -2014,6 +2014,7 @@ function getLoginValidityText(verifiedAt) {
 // ===== Audio =====
 let _bgmAudio = null;
 let _sfxTap = null;
+let _sfxClick = null;
 let _sfxCard = null;
 let _sfxSuccess = null;
 
@@ -2026,6 +2027,10 @@ function initAudio() {
   if (!_sfxTap) {
     _sfxTap = new Audio('audio/sfx_tap.mp3');
     _sfxTap.volume = 0.5;
+  }
+  if (!_sfxClick) {
+    _sfxClick = new Audio('audio/mouse-click.mp3');
+    _sfxClick.volume = 0.6;
   }
   if (!_sfxCard) {
     _sfxCard = new Audio('audio/sfx_card.mp3');
@@ -2056,7 +2061,7 @@ function toggleSfx(enabled) {
 function playSfx(type) {
   if (!AppState.settings.sfx) return;
   initAudio();
-  const audio = type === 'tap' ? _sfxTap : type === 'card' ? _sfxCard : _sfxSuccess;
+  const audio = type === 'click' ? _sfxClick : type === 'tap' ? _sfxTap : type === 'card' ? _sfxCard : _sfxSuccess;
   if (audio) {
     audio.currentTime = 0;
     audio.play().catch(() => {});
@@ -2126,7 +2131,7 @@ async function runServerTest() {
 
 function handleManualServerTest() {
   if (_serverTesting) return;
-  playSfx('tap');
+  playSfx('click');
   if (_serverCountdownTimer) clearInterval(_serverCountdownTimer);
   _serverCountdownTimer = null;
   runServerTest();
