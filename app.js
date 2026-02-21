@@ -292,12 +292,14 @@ function setupSwipeNavigation() {
     // Must be horizontal swipe: |dx| > 60px, |dy| < |dx|, within 500ms
     if (Math.abs(dx) > 60 && Math.abs(dy) < Math.abs(dx) && dt < 500) {
       const currentIdx = TAB_ORDER.indexOf(AppState.currentTab);
-      if (dx < 0 && currentIdx < TAB_ORDER.length - 1) {
-        // Swipe left → next tab
-        switchTab(TAB_ORDER[currentIdx + 1], 'left');
-      } else if (dx > 0 && currentIdx > 0) {
-        // Swipe right → previous tab
-        switchTab(TAB_ORDER[currentIdx - 1], 'right');
+      if (dx < 0) {
+        // Swipe left → next tab (cyclic: last → first)
+        const nextIdx = (currentIdx + 1) % TAB_ORDER.length;
+        switchTab(TAB_ORDER[nextIdx], 'left');
+      } else if (dx > 0) {
+        // Swipe right → previous tab (cyclic: first → last)
+        const prevIdx = (currentIdx - 1 + TAB_ORDER.length) % TAB_ORDER.length;
+        switchTab(TAB_ORDER[prevIdx], 'right');
       }
     }
   }, { passive: true });
@@ -2239,7 +2241,14 @@ function forceClearPending() {
 }
 
 async function handleRefreshAllData() {
-  // Clear all caches
+  // Check if online before clearing cache
+  if (!navigator.onLine) {
+    showToast(t('common_offline_cannot_refresh') || '離線狀態無法刷新數據', 'warning');
+    // Still re-render with existing cached data (don't clear anything)
+    return;
+  }
+
+  // Online: clear all caches and re-download
   API.clearFullCache();
   // Clear preloaded data
   window._preloadedHistory = null;

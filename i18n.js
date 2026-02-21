@@ -88,6 +88,7 @@ const translations = {
     offline_banner: '離線模式', offline_retry: '重試',
     toast_sync_success: '同步完成，已上傳 {count} 條記錄',
     common_loading: '加載中...', common_confirm: '確認', common_error: '錯誤', common_unknown: '未知',
+    common_offline_cannot_refresh: '離線狀態無法刷新數據',
     settings_refresh_data: '刷新數據', settings_refreshing_data: '刷新中...', settings_refresh_data_done: '數據已刷新',
   },
   'zh-CN': {
@@ -178,6 +179,7 @@ const translations = {
     offline_banner: '离线模式', offline_retry: '重试',
     toast_sync_success: '同步完成，已上传 {count} 条记录',
     common_loading: '加载中...', common_confirm: '确认', common_error: '错误', common_unknown: '未知',
+    common_offline_cannot_refresh: '离线状态无法刷新数据',
     settings_refresh_data: '刷新数据', settings_refreshing_data: '刷新中...', settings_refresh_data_done: '数据已刷新',
   },
   'en': {
@@ -268,6 +270,7 @@ const translations = {
     offline_banner: 'Offline Mode', offline_retry: 'Retry',
     toast_sync_success: 'Sync complete, {count} records uploaded',
     common_loading: 'Loading...', common_confirm: 'Confirm', common_error: 'Error', common_unknown: 'Unknown',
+    common_offline_cannot_refresh: 'Cannot refresh while offline',
     settings_refresh_data: 'Refresh Data', settings_refreshing_data: 'Refreshing...', settings_refresh_data_done: 'Data refreshed',
   }
 };
