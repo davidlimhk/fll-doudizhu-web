@@ -32,7 +32,7 @@ const AppState = {
   stats: { range: '本回合', data: [], loading: false, historyGames: [], selectedPlayers: [], loadingHistory: false },
 };
 
-const APP_VERSION = 'v2.0.61';
+const APP_VERSION = 'v2.0.62';
 const GOOGLE_CLIENT_ID = '816020476016-r670uelh69npagn3hj7cu5odd2sv0s2u.apps.googleusercontent.com';
 const UNDO_WINDOW_MS = 60000;
 const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
@@ -373,7 +373,8 @@ function showAuthContent_Login() {
     <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
   `;
   content.classList.remove('hidden');
-  setTimeout(() => content.classList.add('visible'), 50);
+  // Wait for logo slide-up animation to mostly complete before fading in content
+  setTimeout(() => content.classList.add('visible'), 400);
 }
 
 function showAuthContent_Checking(email) {
@@ -387,7 +388,7 @@ function showAuthContent_Checking(email) {
     <div class="auth-email-text">${email}</div>
   `;
   content.classList.remove('hidden');
-  setTimeout(() => content.classList.add('visible'), 50);
+  setTimeout(() => content.classList.add('visible'), 400);
 }
 
 function showAuthContent_CheckFailed(email, errorMsg) {
@@ -408,7 +409,7 @@ function showAuthContent_CheckFailed(email, errorMsg) {
     </button>
   `;
   content.classList.remove('hidden');
-  setTimeout(() => content.classList.add('visible'), 50);
+  setTimeout(() => content.classList.add('visible'), 400);
 }
 
 function showAuthContent_Denied(email) {
@@ -433,7 +434,7 @@ function showAuthContent_Denied(email) {
     </button>
   `;
   content.classList.remove('hidden');
-  setTimeout(() => content.classList.add('visible'), 50);
+  setTimeout(() => content.classList.add('visible'), 400);
 }
 
 async function transitionToAuthorized() {
