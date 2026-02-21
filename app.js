@@ -740,6 +740,132 @@ async function loadHistory(reset = false) {
   }
 }
 
+// ===== Round Grouping (12-hour gap) =====
+const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+
+function parseTimestamp(ts) {
+  if (ts instanceof Date) return ts;
+  const match = String(ts).match(/(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})/);
+  if (match) {
+    return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]),
+      parseInt(match[4]), parseInt(match[5]), parseInt(match[6]));
+  }
+  const match2 = String(ts).match(/(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})/);
+  if (match2) {
+    return new Date(parseInt(match2[1]), parseInt(match2[2]) - 1, parseInt(match2[3]),
+      parseInt(match2[4]), parseInt(match2[5]), 0);
+  }
+  return new Date(ts);
+}
+
+function formatDateYMD(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatTimeHMS(ts) {
+  const date = parseTimestamp(ts);
+  if (isNaN(date.getTime())) return '';
+  const h = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  const s = String(date.getSeconds()).padStart(2, '0');
+  return `${h}:${mi}:${s}`;
+}
+
+function identifyGameRoles(scores) {
+  const entries = Object.entries(scores || {});
+  if (entries.length === 0) return { landlord: null, farmers: [] };
+  let landlord = null;
+  const farmers = [];
+  const scoreCounts = {};
+  for (const [name, score] of entries) {
+    if (!scoreCounts[score]) scoreCounts[score] = [];
+    scoreCounts[score].push(name);
+  }
+  for (const [scoreStr, names] of Object.entries(scoreCounts)) {
+    const score = Number(scoreStr);
+    if (names.length === 1) {
+      landlord = { name: names[0], score };
+    } else {
+      for (const name of names) farmers.push({ name, score });
+    }
+  }
+  if (!landlord && entries.length > 0) {
+    entries.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    landlord = { name: entries[0][0], score: entries[0][1] };
+    for (let i = 1; i < entries.length; i++) farmers.push({ name: entries[i][0], score: entries[i][1] });
+  }
+  return { landlord, farmers };
+}
+
+function groupIntoRounds(records, hideLastRound) {
+  if (records.length === 0) return [];
+  const gamesUnit = t('history_games_unit');
+  const currentRoundLabel = t('score_this_round');
+  const result = [];
+  let currentRound = [];
+  let roundStartTime = null;
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const currentTime = parseTimestamp(record.timestamp);
+    if (i === 0) {
+      currentRound = [record];
+      roundStartTime = currentTime;
+    } else {
+      const prevTime = parseTimestamp(records[i - 1].timestamp);
+      const timeDiff = prevTime.getTime() - currentTime.getTime();
+      if (timeDiff >= TWELVE_HOURS_MS) {
+        if (currentRound.length > 0 && roundStartTime) {
+          result.push({
+            id: `round-${result.length}`,
+            title: formatDateYMD(roundStartTime),
+            subtitle: `${currentRound.length} ${gamesUnit}`,
+            games: currentRound,
+            gameCount: currentRound.length,
+          });
+        }
+        currentRound = [record];
+        roundStartTime = currentTime;
+      } else {
+        currentRound.push(record);
+      }
+    }
+  }
+  if (currentRound.length > 0 && roundStartTime) {
+    result.push({
+      id: `round-${result.length}`,
+      title: formatDateYMD(roundStartTime),
+      subtitle: `${currentRound.length} ${gamesUnit}`,
+      games: currentRound,
+      gameCount: currentRound.length,
+    });
+  }
+  if (hideLastRound && result.length > 1) result.pop();
+  // Mark first round as current if recent
+  if (result.length > 0) {
+    const firstRoundTime = parseTimestamp(result[0].games[0].timestamp);
+    if (Date.now() - firstRoundTime.getTime() < TWELVE_HOURS_MS) {
+      result[0].title = currentRoundLabel;
+    }
+  }
+  return result;
+}
+
+// Track which rounds are expanded
+if (!AppState.expandedRounds) AppState.expandedRounds = new Set();
+
+function toggleRound(roundId) {
+  if (AppState.expandedRounds.has(roundId)) {
+    AppState.expandedRounds.delete(roundId);
+  } else {
+    AppState.expandedRounds.add(roundId);
+  }
+  renderHistoryList();
+}
+
 function renderHistoryList() {
   const listEl = document.getElementById('history-list');
   const footerEl = document.getElementById('history-footer');
@@ -762,14 +888,10 @@ function renderHistoryList() {
   if (h.searchQuery) {
     const q = h.searchQuery.toLowerCase();
     games = games.filter(g => {
-      // Search in landlord, farmer1, farmer2 (enriched fields)
+      if (g.scores) return Object.keys(g.scores).some(name => name.toLowerCase().includes(q));
       if (g.landlord && g.landlord.toLowerCase().includes(q)) return true;
       if (g.farmer1 && g.farmer1.toLowerCase().includes(q)) return true;
       if (g.farmer2 && g.farmer2.toLowerCase().includes(q)) return true;
-      // Also search in scores keys (raw data)
-      if (g.scores) {
-        return Object.keys(g.scores).some(name => name.toLowerCase().includes(q));
-      }
       return false;
     });
   }
@@ -780,47 +902,59 @@ function renderHistoryList() {
     return;
   }
 
-  let prevDate = '';
+  // Group into rounds
+  const rounds = groupIntoRounds(games, h.hasMore);
+
+  // Auto-expand latest round on first render
+  if (AppState.expandedRounds.size === 0 && rounds.length > 0) {
+    AppState.expandedRounds.add(rounds[0].id);
+  }
+
   let html = '';
+  for (const round of rounds) {
+    const isExpanded = AppState.expandedRounds.has(round.id);
+    const chevronIcon = isExpanded ? 'expand_more' : 'chevron_right';
 
-  games.forEach(game => {
-    const date = new Date(game.timestamp);
-    const dateStr = date.toLocaleDateString();
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    if (dateStr !== prevDate) {
-      html += `<div style="padding:8px 0 4px;font-size:calc(12px * var(--font-scale));font-weight:600;color:var(--muted)">${dateStr}</div>`;
-      prevDate = dateStr;
-    }
-
-    const farmerScore = -game.landlordScore / 2;
-    html += `<div class="history-item">
-      <div class="history-item-header">
-        <span class="history-game-num">#${game.gameNumber}${game.isCurrentRound ? ` <span class="history-round-badge">${t('history_this_round')}</span>` : ''}</span>
-        <span class="history-time">${timeStr}${game.isPending ? ` <span class="history-pending-tag">${t('history_pending_label')}</span>` : ''}</span>
+    html += `<div class="round-header" onclick="toggleRound('${round.id}')">
+      <div class="round-header-left">
+        <span class="material-icons round-chevron">${chevronIcon}</span>
+        <span class="round-title">${round.title}</span>
       </div>
-      <div class="history-players">
-        <span class="history-player">
-          <span class="history-player-name">🎩 ${game.landlord}</span>
-          <span class="history-player-score ${game.landlordScore > 0 ? 'positive' : game.landlordScore < 0 ? 'negative' : ''}">${game.landlordScore > 0 ? '+' : ''}${game.landlordScore}</span>
-        </span>
-        <span class="history-player">
-          <span class="history-player-name">🐖 ${game.farmer1}</span>
-          <span class="history-player-score ${farmerScore > 0 ? 'positive' : farmerScore < 0 ? 'negative' : ''}">${farmerScore > 0 ? '+' : ''}${farmerScore}</span>
-        </span>
-        <span class="history-player">
-          <span class="history-player-name">🐓 ${game.farmer2}</span>
-          <span class="history-player-score ${farmerScore > 0 ? 'positive' : farmerScore < 0 ? 'negative' : ''}">${farmerScore > 0 ? '+' : ''}${farmerScore}</span>
-        </span>
-      </div>
+      <span class="round-subtitle">${round.subtitle}</span>
     </div>`;
-  });
+
+    if (isExpanded) {
+      html += `<div class="round-games">`;
+      round.games.forEach(game => {
+        const timeStr = formatTimeHMS(game.timestamp);
+        const isPending = game.isPending === true;
+        const { landlord, farmers } = identifyGameRoles(game.scores);
+
+        const renderPlayerCell = (name, score) => {
+          const scoreColor = score > 0 ? 'positive' : score < 0 ? 'negative' : '';
+          const scoreStr = (score > 0 ? '+' : '') + score;
+          return `<span class="game-row-player">
+            <span class="game-row-player-name">${name}</span>
+            <span class="game-row-player-score ${scoreColor}">${scoreStr}</span>
+          </span>`;
+        };
+
+        html += `<div class="game-row${isPending ? ' pending' : ''}">
+          <span class="game-row-time${isPending ? ' pending-time' : ''}">${isPending ? '<span class="material-icons" style="font-size:10px;margin-right:2px;color:var(--warning)">cloud_upload</span>' : ''}${timeStr}</span>
+          ${landlord ? renderPlayerCell(landlord.name, landlord.score) : '<span class="game-row-player"></span>'}
+          ${farmers.length > 0 ? renderPlayerCell(farmers[0].name, farmers[0].score) : '<span class="game-row-player"></span>'}
+          ${farmers.length > 1 ? renderPlayerCell(farmers[1].name, farmers[1].score) : '<span class="game-row-player"></span>'}
+        </div>`;
+      });
+      html += `</div>`;
+    }
+  }
 
   listEl.innerHTML = html;
 
   if (footerEl) {
     if (h.hasMore) {
-      footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory(false)">${t('common_loading')}</div>`;
+      footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory(false)">${t('history_loading')}</div>`;
       const content = document.getElementById('page-content');
       if (content) {
         content.onscroll = () => {
@@ -828,7 +962,7 @@ function renderHistoryList() {
         };
       }
     } else {
-      footerEl.innerHTML = `<div class="history-footer">${t('history_loaded_all')}</div>`;
+      footerEl.innerHTML = `<div class="history-footer">${t('history_loaded_all')} ${games.length} ${t('history_games_unit')}</div>`;
     }
   }
 }

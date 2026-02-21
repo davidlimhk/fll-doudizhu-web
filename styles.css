@@ -546,64 +546,90 @@ html, body {
 
 .filter-btn.active { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); }
 
-.history-item {
-  padding: 12px 0;
-  border-bottom: 0.5px solid var(--border);
-}
-
-.history-item-header {
+/* Round header - expandable section */
+.round-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.history-game-num {
-  font-size: calc(12px * var(--font-scale));
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.history-time {
-  font-size: calc(11px * var(--font-scale));
-  color: var(--muted);
-}
-
-.history-players {
-  display: flex;
-  gap: 8px;
-  font-size: calc(13px * var(--font-scale));
-  flex-wrap: wrap;
-}
-
-.history-player {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.history-player-name { font-weight: 500; }
-.history-player-score { font-variant-numeric: tabular-nums; font-weight: 600; }
-.history-player-score.positive { color: var(--success); }
-.history-player-score.negative { color: var(--error); }
-
-.history-pending-tag {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.history-round-badge {
-  font-size: calc(11px * var(--font-scale));
-  color: var(--primary);
-  font-weight: 600;
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  padding: 2px 8px;
+  padding: 12px 14px;
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
 }
+.round-header:active { opacity: 0.7; }
+.round-header-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.round-chevron {
+  font-size: calc(20px * var(--font-scale));
+  color: var(--muted);
+}
+.round-title {
+  font-size: calc(15px * var(--font-scale));
+  font-weight: 600;
+  color: var(--fg);
+}
+.round-subtitle {
+  font-size: calc(13px * var(--font-scale));
+  color: var(--muted);
+}
+
+/* Game rows inside expanded round */
+.round-games {
+  padding: 0 4px;
+}
+.game-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 0.5px solid var(--border);
+  gap: 4px;
+}
+.game-row.pending {
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
+}
+.game-row-time {
+  min-width: 60px;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+}
+.game-row-time.pending-time {
+  color: var(--warning);
+}
+.game-row-player {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.game-row-player-name {
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.game-row-player-score {
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.game-row-player-score.positive { color: var(--success); }
+.game-row-player-score.negative { color: var(--error); }
 
 .history-footer {
   text-align: center;

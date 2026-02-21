@@ -168,12 +168,19 @@ const API = {
 
     const isSuccess = data.success === true || data.success === 'true' || data.success === 1;
     if (!isSuccess) {
-      const errorCode = data.code || data.error;
+      const errorCode = data.code || data.error || '';
       if (errorCode === 'AUTH_REQUIRED' || errorCode === 'ACCESS_DENIED') {
         this._handleSessionExpired();
         throw new Error(String(errorCode));
       }
-      throw new Error(data.message || data.error || '提交失败');
+      // GAS sometimes returns a B2 validation error from Google Sheets
+      // even though the data was successfully written. Treat this as success.
+      const errorMsg = data.message || data.error || '';
+      if (errorMsg.includes('data validation rules') || errorMsg.includes('cell B')) {
+        console.warn('[API] Ignoring sheet validation warning (data was written):', errorMsg);
+        return { success: true, _validationWarning: true };
+      }
+      throw new Error(errorMsg || '提交失败');
     }
     return data;
   },
@@ -219,7 +226,21 @@ const API = {
       clientTimestamp,
     };
     const result = await this.postToWebApp(payload);
-    return { timestamp: result.timestamp || clientTimestamp };
+    // GAS stores timestamps in 'YYYY-MM-DD HH:MM:SS' format (Asia/Shanghai UTC+8)
+    // When the response has a validation warning, we don't get the server timestamp back.
+    // Fetch the latest record to get the actual stored timestamp for undo.
+    let serverTimestamp = result.timestamp;
+    if (!serverTimestamp || result._validationWarning) {
+      try {
+        const history = await this.fetchHistoryPage(0, 1);
+        if (history.data && history.data.length > 0) {
+          serverTimestamp = history.data[0].timestamp;
+        }
+      } catch (e) {
+        console.warn('[API] Could not fetch server timestamp for undo:', e);
+      }
+    }
+    return { timestamp: serverTimestamp || clientTimestamp };
   },
 
   // ===== Delete Last Game (POST) =====
