@@ -1710,7 +1710,7 @@ function renderStatsContent(contentEl) {
 
   // Stats trend chart always shows container; the render function handles insufficient data message
   html += `<div class="chart-title">${t('stats_trend_title')}</div>`;
-  html += '<div id="stats-trend-chart" class="chart-container" style="margin-left:-16px;margin-right:-16px"></div>';
+  html += '<div id="stats-trend-chart" class="chart-container" style="margin-left:-16px;margin-right:-16px;width:calc(100% + 32px)"></div>';
 
   if (st.historyGames.length > 0) {
     html += `<div class="radar-section">
@@ -2237,7 +2237,7 @@ function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
 
   const parentW = container.parentElement ? container.parentElement.clientWidth : 0;
   const width = Math.max(container.clientWidth || 360, parentW || 360);
-  const height = 260;
+  const height = 300;
   const marginLeft = 50;
   const marginRight = 12;
   const marginTop = 12;
@@ -2272,7 +2272,7 @@ function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
     xTicks.push(gameIdx);
   }
 
-  const colors = ['#0a7ea4', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'];
+  const colors = ['#1A73E8', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'];
 
   let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
 
@@ -2281,12 +2281,12 @@ function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
     const y = yScale(tick);
     if (y < marginTop || y > marginTop + chartH) return;
     const isZero = tick === 0;
-    svg += `<line x1="${marginLeft}" y1="${y}" x2="${width - marginRight}" y2="${y}" stroke="var(--border)" stroke-width="${isZero ? 1 : 0.5}" ${isZero ? '' : 'stroke-dasharray="4,3"'}/>`;
+    svg += `<line x1="${marginLeft}" y1="${y}" x2="${width - marginRight}" y2="${y}" stroke="var(--border)" stroke-width="${isZero ? 1.5 : 1}" ${isZero ? '' : 'stroke-dasharray="4,3"'}/>`;
     svg += `<text x="${marginLeft - 6}" y="${y + 4}" text-anchor="end" fill="var(--muted)" font-size="9">${Math.round(tick)}</text>`;
   });
 
   // X-axis line
-  svg += `<line x1="${marginLeft}" y1="${marginTop + chartH}" x2="${width - marginRight}" y2="${marginTop + chartH}" stroke="var(--border)" stroke-width="0.5"/>`;
+  svg += `<line x1="${marginLeft}" y1="${marginTop + chartH}" x2="${width - marginRight}" y2="${marginTop + chartH}" stroke="var(--border)" stroke-width="1.5"/>`;
 
   // X-axis tick labels
   xTicks.forEach(gameIdx => {
@@ -2300,17 +2300,17 @@ function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
   svg += `<text x="${marginLeft + chartW / 2}" y="${height - 4}" text-anchor="middle" fill="var(--muted)" font-size="9">${t('trend_x_label')}</text>`;
 
   // Left border
-  svg += `<line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${marginTop + chartH}" stroke="var(--border)" stroke-width="0.5"/>`;
+  svg += `<line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${marginTop + chartH}" stroke="var(--border)" stroke-width="1.5"/>`;
 
   // Player lines
   activePlayers.forEach((player, pIdx) => {
     const series = playerSeries[player];
     const color = colors[pIdx % colors.length];
     const points = series.map(pt => `${xScale(pt.x).toFixed(1)},${yScale(pt.y).toFixed(1)}`).join(' ');
-    svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
     // End point dot
     const lastPt = series[series.length - 1];
-    svg += `<circle cx="${xScale(lastPt.x).toFixed(1)}" cy="${yScale(lastPt.y).toFixed(1)}" r="3" fill="${color}"/>`;
+    svg += `<circle cx="${xScale(lastPt.x).toFixed(1)}" cy="${yScale(lastPt.y).toFixed(1)}" r="4" fill="${color}"/>`;
   });
 
   svg += '</svg>';
@@ -2338,7 +2338,7 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   // Use full available width from container or parent, with minimal margins
   const parentW = container.parentElement ? container.parentElement.clientWidth : 0;
   const width = Math.max(container.clientWidth || 360, parentW || 360);
-  const height = 220;
+  const height = 260;
   const padding = { top: 20, right: 20, bottom: 36, left: 40 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
@@ -2374,7 +2374,7 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   minVal -= range * 0.1;
   maxVal += range * 0.1;
 
-  const colors = ['#0a7ea4', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'];
+  const colors = ['#1A73E8', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'];
 
   let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
 
@@ -2382,13 +2382,13 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   for (let i = 0; i <= gridLines; i++) {
     const y = padding.top + (chartH / gridLines) * i;
     const val = Math.round(maxVal - (maxVal - minVal) * (i / gridLines));
-    svg += `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>`;
+    svg += `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
     svg += `<text x="${padding.left - 6}" y="${y + 4}" text-anchor="end" fill="var(--muted)" font-size="10">${val}</text>`;
   }
 
   if (minVal < 0 && maxVal > 0) {
     const zeroY = padding.top + chartH * (maxVal / (maxVal - minVal));
-    svg += `<line x1="${padding.left}" y1="${zeroY}" x2="${width - padding.right}" y2="${zeroY}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4,4"/>`;
+    svg += `<line x1="${padding.left}" y1="${zeroY}" x2="${width - padding.right}" y2="${zeroY}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4,4"/>`;
   }
 
   players.forEach((player, pIdx) => {
@@ -2401,7 +2401,7 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
       const y = padding.top + chartH * ((maxVal - val) / (maxVal - minVal));
       path += (i === 0 ? 'M' : 'L') + `${x.toFixed(1)},${y.toFixed(1)}`;
     });
-    svg += `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    svg += `<path d="${path}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
   });
 
   // X-axis numbers - show every game number when ≤20 games, otherwise use smart ticks
@@ -2439,7 +2439,7 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   legend += '</div>';
 
   // Title above chart, legend below chart (centered)
-  const chartTitle = title ? `<h2 class="round-title">${title}</h2>` : '';
+  const chartTitle = title ? `<h2 class="round-title" style="text-align:left">${title}</h2>` : '';
   container.innerHTML = chartTitle + svg + legend;
 }
 
@@ -2634,9 +2634,10 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
   if (!games || games.length === 0) return;
 
   const players = selectedPlayers && selectedPlayers.length > 0 ? selectedPlayers : allPlayers;
-  const size = Math.min(container.clientWidth || 360, 500);
+  const parentW = container.parentElement ? container.parentElement.clientWidth : 0;
+  const size = Math.min(Math.max(container.clientWidth || 360, parentW || 360), 500);
   const cx = size / 2, cy = size / 2;
-  const radius = size * 0.38;
+  const radius = size * 0.36;
 
   // Calculate stats using APK-matching logic
   const baseStats = calculateAllRadarStats(games, allPlayers);
@@ -2661,21 +2662,21 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
       const angle = startAngle + angleStep * i;
       points += `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)} `;
     }
-    svg += `<polygon points="${points}" fill="none" stroke="var(--border)" stroke-width="1"/>`;
+    svg += `<polygon points="${points}" fill="none" stroke="var(--border)" stroke-width="1.5"/>`;
   }
 
   for (let i = 0; i < 6; i++) {
     const angle = startAngle + angleStep * i;
     const x = cx + radius * Math.cos(angle);
     const y = cy + radius * Math.sin(angle);
-    svg += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    svg += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--border)" stroke-width="1.5"/>`;
     const lx = cx + (radius + 22) * Math.cos(angle);
     const ly = cy + (radius + 22) * Math.sin(angle);
     const anchor = Math.abs(Math.cos(angle)) < 0.1 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end';
     svg += `<text x="${lx.toFixed(1)}" y="${(ly + 5).toFixed(1)}" text-anchor="${anchor}" fill="var(--fg)" font-size="13" font-weight="600">${dimLabels[i]}</text>`;
   }
 
-  const colors = ['#0a7ea4', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+  const colors = ['#1A73E8', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
   players.forEach((player, pIdx) => {
     const stats = allStats[player];
     if (!stats) return;
@@ -2688,12 +2689,12 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
       const angle = startAngle + angleStep * i;
       points += `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)} `;
     });
-    svg += `<polygon points="${points}" fill="${color}25" stroke="${color}" stroke-width="2.5"/>`;
+    svg += `<polygon points="${points}" fill="${color}25" stroke="${color}" stroke-width="3"/>`;
     dims.forEach((d, i) => {
       const val = Math.max(stats[d], 0.05);
       const r = radius * val;
       const angle = startAngle + angleStep * i;
-      svg += `<circle cx="${(cx + r * Math.cos(angle)).toFixed(1)}" cy="${(cy + r * Math.sin(angle)).toFixed(1)}" r="4" fill="${color}"/>`;
+      svg += `<circle cx="${(cx + r * Math.cos(angle)).toFixed(1)}" cy="${(cy + r * Math.sin(angle)).toFixed(1)}" r="5" fill="${color}"/>`;
     });
   });
 
@@ -2709,7 +2710,7 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
   legend += '</div>';
 
   // Radar data table - show each player's 6 dimension RAW values (from baseStats, not normalized)
-  let dataTable = '<div style="width:100%;margin-top:12px;padding:0 8px">';
+  let dataTable = '<div style="width:100%;margin-top:12px;padding:0 4px">';
   const dimLabelsTable = [
     t('radar_engagement'), t('radar_landlord_rate'), t('radar_win_rate'),
     t('radar_volatility'), t('radar_attack'), t('radar_defense'),
@@ -2723,9 +2724,9 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
     if (!stats) return;
     const color = colors[pIdx % colors.length];
     if (players.length > 1) {
-      dataTable += `<div style="display:flex;align-items:center;gap:6px;margin-top:12px;margin-bottom:4px">
+      dataTable += `<div style="display:flex;align-items:center;gap:6px;margin-top:16px;margin-bottom:6px;padding-bottom:6px;border-bottom:1.5px solid var(--border)">
         <span style="width:10px;height:10px;background:${color};border-radius:50%;flex-shrink:0"></span>
-        <span style="font-size:13px;font-weight:600;color:var(--fg)">${player}</span>
+        <span style="font-size:14px;font-weight:700;color:var(--fg)">${player}</span>
       </div>`;
     }
     const rawKeys = ['rawGamesPlayed', 'rawLandlordRate', 'rawWinRate', 'rawVolatility', 'rawAttackWinRate', 'rawDefenseWinRate'];
@@ -2737,7 +2738,7 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
       else if (key === 'rawVolatility') value = (stats.rawVolatility * 100).toFixed(1) + '%';
       else if (key === 'rawAttackWinRate') value = (stats.rawAttackWinRate * 100).toFixed(1) + '%';
       else if (key === 'rawDefenseWinRate') value = (stats.rawDefenseWinRate * 100).toFixed(1) + '%';
-      dataTable += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">
+      dataTable += `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0 7px 20px;border-bottom:0.5px solid var(--border)">
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;color:var(--fg)">${dimLabelsTable[i]}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:1px">${dimDescs[i]}</div>
