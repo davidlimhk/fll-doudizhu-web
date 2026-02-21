@@ -179,9 +179,9 @@ html, body {
 }
 
 .form-label {
-  font-size: calc(14px * var(--font-scale));
-  font-weight: 500;
-  color: var(--muted);
+  font-size: calc(16px * var(--font-scale));
+  font-weight: 600;
+  color: var(--fg);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -189,7 +189,8 @@ html, body {
 .form-value {
   flex: 1;
   text-align: right;
-  font-size: calc(14px * var(--font-scale));
+  font-size: calc(16px * var(--font-scale));
+  font-weight: 600;
   margin-right: 4px;
   min-width: 30px;
   white-space: nowrap;
@@ -197,15 +198,15 @@ html, body {
   text-overflow: ellipsis;
 }
 
-.form-value.placeholder { color: var(--muted); }
+.form-value.placeholder { color: var(--muted); font-weight: 500; }
 .form-value.score-positive { color: var(--success); font-weight: 700; font-variant-numeric: tabular-nums; }
 .form-value.score-negative { color: var(--error); font-weight: 700; font-variant-numeric: tabular-nums; }
 .form-value.score-zero { color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .chevron {
   color: var(--muted);
-  font-size: calc(20px * var(--font-scale));
-  font-weight: 300;
+  font-size: calc(22px * var(--font-scale));
+  font-weight: 400;
   flex-shrink: 0;
 }
 
@@ -228,9 +229,9 @@ html, body {
 .swap-placeholder { width: 20px; height: 20px; flex-shrink: 0; }
 
 .form-label-farmer {
-  font-size: calc(14px * var(--font-scale));
-  font-weight: 500;
-  color: var(--muted);
+  font-size: calc(16px * var(--font-scale));
+  font-weight: 600;
+  color: var(--fg);
   white-space: nowrap;
   flex: 1.4;
 }
@@ -238,7 +239,8 @@ html, body {
 .form-value-farmer {
   flex: 1;
   text-align: right;
-  font-size: calc(14px * var(--font-scale));
+  font-size: calc(16px * var(--font-scale));
+  font-weight: 600;
   margin-right: 4px;
   white-space: nowrap;
   overflow: hidden;

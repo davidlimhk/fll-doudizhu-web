@@ -1552,13 +1552,27 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
     svg += `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   });
 
-  // X-axis numbers
+  // X-axis numbers - show every game number when ≤20 games, otherwise use smart ticks
   const totalGames = reversedGames.length;
-  const xTickCount = Math.min(totalGames, 8);
-  for (let i = 0; i < xTickCount; i++) {
-    const gameIdx = Math.round(i * (totalGames - 1) / Math.max(xTickCount - 1, 1));
-    const x = padding.left + (chartW / Math.max(totalGames - 1, 1)) * gameIdx;
-    svg += `<text x="${x.toFixed(1)}" y="${padding.top + chartH + 16}" text-anchor="middle" fill="var(--muted)" font-size="10">${gameIdx + 1}</text>`;
+  if (totalGames <= 20) {
+    // Show every game number
+    for (let i = 0; i < totalGames; i++) {
+      const x = padding.left + (chartW / Math.max(totalGames - 1, 1)) * i;
+      svg += `<text x="${x.toFixed(1)}" y="${padding.top + chartH + 16}" text-anchor="middle" fill="var(--muted)" font-size="10">${i + 1}</text>`;
+    }
+  } else {
+    // For larger datasets, show evenly spaced ticks
+    const maxTicks = Math.min(totalGames, Math.floor(chartW / 30));
+    const step = Math.ceil(totalGames / maxTicks);
+    for (let i = 0; i < totalGames; i += step) {
+      const x = padding.left + (chartW / Math.max(totalGames - 1, 1)) * i;
+      svg += `<text x="${x.toFixed(1)}" y="${padding.top + chartH + 16}" text-anchor="middle" fill="var(--muted)" font-size="10">${i + 1}</text>`;
+    }
+    // Always show the last number
+    if ((totalGames - 1) % step !== 0) {
+      const x = padding.left + chartW;
+      svg += `<text x="${x.toFixed(1)}" y="${padding.top + chartH + 16}" text-anchor="middle" fill="var(--muted)" font-size="10">${totalGames}</text>`;
+    }
   }
   svg += `<text x="${width / 2}" y="${height - 2}" text-anchor="middle" fill="var(--muted)" font-size="10">${t('trend_x_label')}</text>`;
   svg += '</svg>';
@@ -1573,7 +1587,7 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   legend += '</div>';
 
   // Title above chart, legend below chart (centered)
-  const chartTitle = title ? `<div style="font-size:calc(14px * var(--font-scale));font-weight:600;color:var(--foreground);margin-bottom:8px">${title}</div>` : '';
+  const chartTitle = title ? `<h2 class="round-title">${title}</h2>` : '';
   container.innerHTML = chartTitle + svg + legend;
 }
 
