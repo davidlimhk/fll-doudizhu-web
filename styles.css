@@ -1089,7 +1089,7 @@ html, body {
 .auth-gate {
   position: fixed;
   inset: 0;
-  background: #0a7ea4;
+  background: #3B5171;
   z-index: 600;
   display: flex;
   flex-direction: column;
@@ -1106,7 +1106,7 @@ html, body {
 .auth-overlay {
   position: fixed;
   inset: 0;
-  background: #0a7ea4;
+  background: #3B5171;
   z-index: 550;
   display: flex;
   flex-direction: column;
@@ -1132,31 +1132,33 @@ html, body {
 }
 
 .auth-logo-shifted {
-  transform: translateY(-80px);
+  transform: translateY(-40px);
 }
 
 .auth-avatar {
-  width: 120px;
-  height: 120px;
-  border-radius: 60px;
-  margin-bottom: 16px;
-  object-fit: cover;
+  width: 220px;
+  height: auto;
+  border-radius: 0;
+  margin-bottom: 20px;
+  object-fit: contain;
 }
 
 .auth-quote {
-  color: rgba(255,255,255,0.6);
-  font-size: 14px;
+  color: rgba(255,255,255,0.85);
+  font-size: 22px;
   font-style: italic;
   text-align: center;
   margin-bottom: 8px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
 }
 
 .auth-content {
   text-align: center;
-  padding: 0 40px;
+  padding: 0 32px;
   width: 100%;
-  max-width: 360px;
-  margin-top: 32px;
+  max-width: 400px;
+  margin-top: 24px;
   opacity: 0;
   transition: opacity 0.4s ease;
 }
@@ -1218,12 +1220,12 @@ html, body {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 14px 24px;
-  border-radius: 12px;
+  padding: 16px 24px;
+  border-radius: 28px;
   background: #fff;
-  color: #1A73E8;
+  color: #3B5171;
   border: none;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
   cursor: pointer;
   transition: transform 0.08s, opacity 0.1s;
@@ -1239,12 +1241,12 @@ html, body {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 12px 24px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.15);
-  color: #fff;
-  border: 1.5px solid rgba(255,255,255,0.3);
-  font-size: 15px;
+  padding: 14px 24px;
+  border-radius: 28px;
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.85);
+  border: 1.5px solid rgba(255,255,255,0.25);
+  font-size: 16px;
   font-weight: 500;
   cursor: pointer;
   transition: transform 0.08s, opacity 0.1s;
@@ -1260,13 +1262,13 @@ html, body {
   justify-content: center;
   gap: 10px;
   width: 100%;
-  padding: 14px 24px;
-  border-radius: 12px;
+  padding: 16px 24px;
+  border-radius: 28px;
   background: #fff;
-  color: #3c4043;
+  color: #3B5171;
   border: none;
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   cursor: pointer;
   transition: transform 0.08s, opacity 0.1s, box-shadow 0.2s;
   margin-bottom: 12px;
@@ -1279,9 +1281,10 @@ html, body {
 .auth-google-btn svg { flex-shrink: 0; }
 
 .auth-version {
-  color: rgba(255,255,255,0.4);
-  font-size: 12px;
-  margin-top: 16px;
+  color: rgba(255,255,255,0.45);
+  font-size: 13px;
+  margin-top: 20px;
+  letter-spacing: 0.5px;
 }
 
 .auth-error-text {
