@@ -444,12 +444,13 @@ async function transitionToAuthorized() {
   applyTheme();
   setupSwipeNavigation();
   await initApp();
+  // Preload all SFX buffers immediately (user already interacted via login)
+  initAudio();
   // Start server status auto-test countdown (30s cycle)
   runServerTest(); // Initial test immediately
   startServerCountdown();
   // Auto-play BGM if enabled
   if (AppState.settings.bgm) {
-    initAudio();
     _bgmAudio.play().catch(() => {});
   }
   // Fade out the auth gate
@@ -2062,10 +2063,44 @@ function getLoginValidityText(verifiedAt) {
 
 // ===== Audio =====
 let _bgmAudio = null;
-let _sfxTap = null;
-let _sfxClick = null;
-let _sfxCard = null;
-let _sfxSuccess = null;
+// === Web Audio API for instant SFX playback ===
+let _audioCtx = null;
+const _sfxBuffers = {}; // { click, tap, card, success } -> AudioBuffer
+const _sfxVolumes = { click: 0.6, tap: 0.5, card: 0.5, success: 0.5 };
+const _sfxFiles = {
+  click: 'audio/mouse-click.mp3',
+  tap: 'audio/sfx_tap.mp3',
+  card: 'audio/sfx_card.mp3',
+  success: 'audio/sfx_success.mp3',
+};
+let _sfxPreloaded = false;
+
+function _getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  // Resume if suspended (browser autoplay policy)
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+
+async function _preloadSfxBuffer(type) {
+  if (_sfxBuffers[type]) return;
+  try {
+    const resp = await fetch(_sfxFiles[type]);
+    const arrayBuf = await resp.arrayBuffer();
+    const ctx = _getAudioCtx();
+    _sfxBuffers[type] = await ctx.decodeAudioData(arrayBuf);
+  } catch (e) {
+    console.warn('[Audio] Failed to preload SFX:', type, e);
+  }
+}
+
+function preloadAllSfx() {
+  if (_sfxPreloaded) return;
+  _sfxPreloaded = true;
+  Object.keys(_sfxFiles).forEach(type => _preloadSfxBuffer(type));
+}
 
 function initAudio() {
   if (!_bgmAudio) {
@@ -2073,22 +2108,7 @@ function initAudio() {
     _bgmAudio.loop = true;
     _bgmAudio.volume = 0.3;
   }
-  if (!_sfxTap) {
-    _sfxTap = new Audio('audio/sfx_tap.mp3');
-    _sfxTap.volume = 0.5;
-  }
-  if (!_sfxClick) {
-    _sfxClick = new Audio('audio/mouse-click.mp3');
-    _sfxClick.volume = 0.6;
-  }
-  if (!_sfxCard) {
-    _sfxCard = new Audio('audio/sfx_card.mp3');
-    _sfxCard.volume = 0.5;
-  }
-  if (!_sfxSuccess) {
-    _sfxSuccess = new Audio('audio/sfx_success.mp3');
-    _sfxSuccess.volume = 0.5;
-  }
+  preloadAllSfx();
 }
 
 function toggleBgm(enabled) {
@@ -2109,11 +2129,20 @@ function toggleSfx(enabled) {
 
 function playSfx(type) {
   if (!AppState.settings.sfx) return;
-  initAudio();
-  const audio = type === 'click' ? _sfxClick : type === 'tap' ? _sfxTap : type === 'card' ? _sfxCard : _sfxSuccess;
-  if (audio) {
-    audio.currentTime = 0;
-    audio.play().catch(() => {});
+  preloadAllSfx();
+  const buffer = _sfxBuffers[type];
+  if (!buffer) return;
+  try {
+    const ctx = _getAudioCtx();
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = _sfxVolumes[type] || 0.5;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(0);
+  } catch (e) {
+    // Fallback: ignore errors silently
   }
 }
 
