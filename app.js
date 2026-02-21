@@ -1284,10 +1284,9 @@ function renderStatsContent(contentEl) {
     </div>
   </div>`;
 
-  if (st.historyGames.length > 1) {
-    html += `<div class="chart-title">${t('stats_trend_title')}</div>`;
-    html += '<div id="stats-trend-chart" class="chart-container" style="margin-left:-16px;margin-right:-16px"></div>';
-  }
+  // Stats trend chart always shows container; the render function handles insufficient data message
+  html += `<div class="chart-title">${t('stats_trend_title')}</div>`;
+  html += '<div id="stats-trend-chart" class="chart-container" style="margin-left:-16px;margin-right:-16px"></div>';
 
   if (st.historyGames.length > 0) {
     html += `<div class="radar-section">
@@ -1300,9 +1299,9 @@ function renderStatsContent(contentEl) {
   contentEl.innerHTML = html;
 
   setTimeout(() => {
-    if (st.historyGames.length > 1) {
+    {
       const trendEl = document.getElementById('stats-trend-chart');
-      if (trendEl) renderTrendChart(trendEl, st.historyGames, playerNames, null, st.selectedPlayers);
+      if (trendEl) renderStatsTrendChart(trendEl, st.historyGames, playerNames, st.selectedPlayers);
     }
     if (st.historyGames.length > 0) {
       const radarEl = document.getElementById('stats-radar-chart');
@@ -1633,6 +1632,195 @@ function handleLogout() {
 }
 
 // ===== CHARTS =====
+
+/**
+ * Stats page trend chart: 50-game moving average score per player.
+ * Matches APK StatsTrendChart exactly.
+ * - X-axis: global game sequence (all games in dataset)
+ * - Y-axis: 50-game moving average based ONLY on games the player participated in
+ * - Players with fewer than 50 participated games are NOT displayed
+ * - During inactive periods, the line stays flat
+ * - First 50 participated games per player are skipped (warm-up)
+ */
+function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
+  const WINDOW_SIZE = 50;
+  const players = selectedPlayers && selectedPlayers.length > 0 ? selectedPlayers : allPlayers;
+
+  // Games come in reverse chronological order (newest first), reverse for chart
+  const chronological = [...games].reverse();
+  const totalGames = chronological.length;
+
+  if (totalGames === 0) {
+    container.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px">${t('stats_no_data')}</div>`;
+    return;
+  }
+
+  // Calculate 50-game moving average for each player
+  const playerSeries = {};
+  const activePlayers = [];
+
+  players.forEach(p => {
+    const recentScores = []; // sliding window buffer
+    let gamesPlayed = 0;
+    let currentAvg = null;
+    const series = [];
+
+    chronological.forEach((g, idx) => {
+      let score = undefined;
+      if (g.scores && g.scores[p] !== undefined) {
+        score = g.scores[p];
+      } else if (p === g.landlord) {
+        score = g.landlordScore;
+      } else if (p === g.farmer1 || p === g.farmer2) {
+        score = -g.landlordScore / 2;
+      }
+
+      if (score !== undefined) {
+        // Player participated in this game
+        gamesPlayed++;
+        recentScores.push(score);
+
+        // Sliding window: keep only last WINDOW_SIZE scores
+        if (recentScores.length > WINDOW_SIZE) {
+          recentScores.shift();
+        }
+
+        // Only start plotting after WINDOW_SIZE games (stable period)
+        if (gamesPlayed >= WINDOW_SIZE) {
+          currentAvg = recentScores.reduce((a, b) => a + b, 0) / recentScores.length;
+          series.push({ x: idx, y: currentAvg });
+        }
+      } else {
+        // Player did NOT participate - extend flat line if we have a stable average
+        if (currentAvg !== null) {
+          series.push({ x: idx, y: currentAvg });
+        }
+      }
+    });
+
+    // Only include players with at least WINDOW_SIZE participated games
+    if (gamesPlayed >= WINDOW_SIZE && series.length > 0) {
+      playerSeries[p] = series;
+      activePlayers.push(p);
+    }
+  });
+
+  if (activePlayers.length === 0) {
+    container.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px">${t('stats_insufficient_data')}</div>`;
+    return;
+  }
+
+  // Find min/max across all series for Y-axis
+  let minVal = Infinity;
+  let maxVal = -Infinity;
+  activePlayers.forEach(p => {
+    playerSeries[p].forEach(pt => {
+      if (pt.y < minVal) minVal = pt.y;
+      if (pt.y > maxVal) maxVal = pt.y;
+    });
+  });
+
+  if (minVal === maxVal) { minVal -= 10; maxVal += 10; }
+  const range = maxVal - minVal;
+  minVal -= range * 0.1;
+  maxVal += range * 0.1;
+
+  const parentW = container.parentElement ? container.parentElement.clientWidth : 0;
+  const width = Math.max(container.clientWidth || 360, parentW || 360);
+  const height = 260;
+  const marginLeft = 50;
+  const marginRight = 12;
+  const marginTop = 12;
+  const marginBottom = 36;
+  const chartW = width - marginLeft - marginRight;
+  const chartH = height - marginTop - marginBottom;
+
+  const maxX = Math.max(totalGames - 1, 1);
+  const xScale = (gameIdx) => marginLeft + (gameIdx / maxX) * chartW;
+  const yScale = (v) => marginTop + chartH - ((v - minVal) / (maxVal - minVal)) * chartH;
+
+  // Y-axis ticks
+  const yRange = maxVal - minVal;
+  const rawStep = yRange / 5;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(Math.abs(rawStep) || 1)));
+  const step = Math.ceil(rawStep / magnitude) * magnitude || 1;
+  const yTicks = [];
+  const startTick = Math.ceil(minVal / step) * step;
+  for (let tick = startTick; tick <= maxVal; tick += step) {
+    yTicks.push(Math.round(tick * 10) / 10);
+  }
+  if (!yTicks.some(tick => tick === 0) && minVal <= 0 && maxVal >= 0) {
+    yTicks.push(0);
+    yTicks.sort((a, b) => a - b);
+  }
+
+  // X-axis ticks (5 evenly spaced)
+  const xTickCount = Math.min(5, totalGames);
+  const xTicks = [];
+  for (let i = 0; i < xTickCount; i++) {
+    const gameIdx = Math.round((i / (xTickCount - 1)) * maxX);
+    xTicks.push(gameIdx);
+  }
+
+  const colors = ['#0a7ea4', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'];
+
+  let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
+
+  // Horizontal grid lines and Y-axis labels
+  yTicks.forEach(tick => {
+    const y = yScale(tick);
+    if (y < marginTop || y > marginTop + chartH) return;
+    const isZero = tick === 0;
+    svg += `<line x1="${marginLeft}" y1="${y}" x2="${width - marginRight}" y2="${y}" stroke="var(--border)" stroke-width="${isZero ? 1 : 0.5}" ${isZero ? '' : 'stroke-dasharray="4,3"'}/>`;
+    svg += `<text x="${marginLeft - 6}" y="${y + 4}" text-anchor="end" fill="var(--muted)" font-size="9">${Math.round(tick)}</text>`;
+  });
+
+  // X-axis line
+  svg += `<line x1="${marginLeft}" y1="${marginTop + chartH}" x2="${width - marginRight}" y2="${marginTop + chartH}" stroke="var(--border)" stroke-width="0.5"/>`;
+
+  // X-axis tick labels
+  xTicks.forEach(gameIdx => {
+    svg += `<text x="${xScale(gameIdx).toFixed(1)}" y="${marginTop + chartH + 14}" text-anchor="middle" fill="var(--muted)" font-size="9">${gameIdx + 1}</text>`;
+  });
+
+  // Y-axis label (rotated)
+  svg += `<text x="12" y="${marginTop + chartH / 2}" text-anchor="middle" fill="var(--muted)" font-size="9" transform="rotate(-90, 12, ${marginTop + chartH / 2})">${t('trend_y_label')}</text>`;
+
+  // X-axis label
+  svg += `<text x="${marginLeft + chartW / 2}" y="${height - 4}" text-anchor="middle" fill="var(--muted)" font-size="9">${t('trend_x_label')}</text>`;
+
+  // Left border
+  svg += `<line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${marginTop + chartH}" stroke="var(--border)" stroke-width="0.5"/>`;
+
+  // Player lines
+  activePlayers.forEach((player, pIdx) => {
+    const series = playerSeries[player];
+    const color = colors[pIdx % colors.length];
+    const points = series.map(pt => `${xScale(pt.x).toFixed(1)},${yScale(pt.y).toFixed(1)}`).join(' ');
+    svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    // End point dot
+    const lastPt = series[series.length - 1];
+    svg += `<circle cx="${xScale(lastPt.x).toFixed(1)}" cy="${yScale(lastPt.y).toFixed(1)}" r="3" fill="${color}"/>`;
+  });
+
+  svg += '</svg>';
+
+  // Legend with dots
+  let legend = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;justify-content:center">';
+  activePlayers.forEach((player, pIdx) => {
+    const color = colors[pIdx % colors.length];
+    legend += `<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)">
+      <span style="width:8px;height:8px;background:${color};border-radius:50%;flex-shrink:0"></span>${player}
+    </span>`;
+  });
+  legend += '</div>';
+
+  container.innerHTML = svg + legend;
+}
+
+/**
+ * Score page (round) trend chart: cumulative score per game in the current round.
+ */
 function renderTrendChart(container, games, allPlayers, title, selectedPlayers) {
   if (!games || games.length < 2) return;
 
@@ -1745,50 +1933,207 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   container.innerHTML = chartTitle + svg + legend;
 }
 
+/**
+ * Identify the landlord in a 3-player game by score pattern.
+ * Matches APK identifyLandlord exactly.
+ * The landlord's score equals the negative sum of the two farmers' scores,
+ * and the landlord has the highest absolute score.
+ */
+function identifyLandlord(scores) {
+  const entries = Object.entries(scores).filter(([_, s]) => s !== undefined && s !== 0);
+  if (entries.length !== 3) return null;
+  for (const [name, score] of entries) {
+    const others = entries.filter(([n]) => n !== name);
+    const othersSum = others.reduce((sum, [_, s]) => sum + s, 0);
+    if (Math.abs(score + othersSum) < 0.01) {
+      if (Math.abs(score) > Math.abs(others[0][1]) + 0.01) {
+        return name;
+      }
+    }
+  }
+  entries.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  return entries[0][0];
+}
+
+/**
+ * Calculate radar stats for ALL players, matching APK calculateAllRadarStats exactly.
+ * Returns { [player]: { engagement, landlordRate, winRate, volatility, attack, defense, raw* } }
+ */
+function calculateAllRadarStats(games, playerNames) {
+  const result = {};
+  if (!games.length || !playerNames.length) return result;
+
+  const playerGameCounts = {};
+  playerNames.forEach(p => { playerGameCounts[p] = 0; });
+
+  const rawData = {};
+  playerNames.forEach(p => {
+    rawData[p] = {
+      totalGames: 0, wins: 0,
+      landlordGames: 0, landlordWins: 0, landlordTotalScore: 0,
+      farmerGames: 0, farmerWins: 0, farmerTotalScore: 0,
+      scores: [],
+    };
+  });
+
+  // Process all games once
+  games.forEach(game => {
+    const scores = game.scores || {};
+    const landlord = identifyLandlord(scores);
+    Object.entries(scores).forEach(([p, s]) => {
+      if (s === undefined || s === 0) return;
+      playerGameCounts[p] = (playerGameCounts[p] || 0) + 1;
+      if (!rawData[p]) return;
+      const d = rawData[p];
+      d.totalGames++;
+      d.scores.push(s);
+      if (s > 0) d.wins++;
+      if (p === landlord) {
+        d.landlordGames++;
+        d.landlordTotalScore += s;
+        if (s > 0) d.landlordWins++;
+      } else {
+        d.farmerGames++;
+        d.farmerTotalScore += s;
+        if (s > 0) d.farmerWins++;
+      }
+    });
+  });
+
+  const maxGames = Math.max(...Object.values(playerGameCounts), 1);
+
+  // Compute raw values and normalized values for each player
+  const computed = {};
+  const attackValues = [];
+  const defenseValues = [];
+
+  playerNames.forEach(p => {
+    const d = rawData[p];
+    if (d.totalGames === 0) return;
+
+    const rawLandlordRate = d.landlordGames / d.totalGames;
+    const rawWinRate = d.wins / d.totalGames;
+    const rawAttackWinRate = d.landlordGames > 0 ? d.landlordWins / d.landlordGames : 0;
+    const rawDefenseWinRate = d.farmerGames > 0 ? d.farmerWins / d.farmerGames : 0;
+
+    // Volatility: rate of big wins/losses relative to this player's own median
+    const absScores = d.scores.map(Math.abs).sort((a, b) => a - b);
+    const medianAbsScore = absScores[Math.floor(absScores.length / 2)] || 0;
+    const bigThreshold = medianAbsScore * 1.5;
+    const bigGameCount = d.scores.filter(s => Math.abs(s) > bigThreshold).length;
+    const rawVolatility = bigGameCount / d.totalGames;
+
+    const engagement = Math.min(1, d.totalGames / maxGames);
+    const landlordRateNorm = Math.min(1, rawLandlordRate / 0.5); // 50% landlord rate = max
+    const winRateNorm = rawWinRate;
+    const volatilityNorm = Math.min(1, rawVolatility / 0.4); // 40% big games = max
+
+    computed[p] = {
+      engagement,
+      landlordRate: landlordRateNorm,
+      winRate: winRateNorm,
+      volatility: volatilityNorm,
+      attackWinRate: rawAttackWinRate,
+      defenseWinRate: rawDefenseWinRate,
+      rawGamesPlayed: d.totalGames,
+      rawLandlordRate,
+      rawWinRate,
+      rawVolatility,
+      rawAttackWinRate,
+      rawDefenseWinRate,
+    };
+
+    if (d.landlordGames > 0) attackValues.push(rawAttackWinRate);
+    if (d.farmerGames > 0) defenseValues.push(rawDefenseWinRate);
+  });
+
+  // Normalize attack/defense using min-max across all players
+  const minMaxNormalize = (value, values) => {
+    if (values.length <= 1) return 0.5;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (max === min) return 0.5;
+    return 0.1 + ((value - min) / (max - min)) * 0.9;
+  };
+
+  playerNames.forEach(p => {
+    const c = computed[p];
+    if (!c) return;
+    result[p] = {
+      engagement: c.engagement,
+      landlordRate: c.landlordRate,
+      winRate: c.winRate,
+      volatility: c.volatility,
+      attack: minMaxNormalize(c.attackWinRate, attackValues),
+      defense: minMaxNormalize(c.defenseWinRate, defenseValues),
+      rawGamesPlayed: c.rawGamesPlayed,
+      rawLandlordRate: c.rawLandlordRate,
+      rawWinRate: c.rawWinRate,
+      rawVolatility: c.rawVolatility,
+      rawAttackWinRate: c.rawAttackWinRate,
+      rawDefenseWinRate: c.rawDefenseWinRate,
+    };
+  });
+
+  return result;
+}
+
+/**
+ * Re-normalize radar dimensions for selected players using hybrid absolute/relative blend.
+ * Matches APK normalizeForSelectedPlayers exactly.
+ */
+function normalizeForSelectedPlayers(allStats, selectedPlayers) {
+  const RADAR_DIM_KEYS = ['engagement', 'landlordRate', 'winRate', 'volatility', 'attack', 'defense'];
+  const active = selectedPlayers.filter(p => allStats[p]);
+  if (active.length <= 1) return allStats;
+
+  const zoomWeights = { 2: 0.35, 3: 0.50, 4: 0.60 };
+  const zoomWeight = zoomWeights[active.length] || 0.70;
+
+  const dimValues = {};
+  RADAR_DIM_KEYS.forEach(key => {
+    dimValues[key] = active.map(p => allStats[p][key]);
+  });
+
+  const relativeNormalize = (value, values) => {
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (max === min) return 0.55;
+    return 0.15 + ((value - min) / (max - min)) * 0.80;
+  };
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  const result = { ...allStats };
+  active.forEach(p => {
+    const s = allStats[p];
+    result[p] = {
+      ...s,
+      engagement: lerp(s.engagement, relativeNormalize(s.engagement, dimValues['engagement']), zoomWeight),
+      landlordRate: lerp(s.landlordRate, relativeNormalize(s.landlordRate, dimValues['landlordRate']), zoomWeight),
+      winRate: lerp(s.winRate, relativeNormalize(s.winRate, dimValues['winRate']), zoomWeight),
+      volatility: lerp(s.volatility, relativeNormalize(s.volatility, dimValues['volatility']), zoomWeight),
+      attack: lerp(s.attack, relativeNormalize(s.attack, dimValues['attack']), zoomWeight),
+      defense: lerp(s.defense, relativeNormalize(s.defense, dimValues['defense']), zoomWeight),
+    };
+  });
+  return result;
+}
+
 function renderRadarChart(container, games, allPlayers, selectedPlayers) {
   if (!games || games.length === 0) return;
 
-  const players = selectedPlayers || allPlayers;
-  // Enlarge radar chart - use more of the available width
+  const players = selectedPlayers && selectedPlayers.length > 0 ? selectedPlayers : allPlayers;
   const size = Math.min(container.clientWidth || 360, 500);
   const cx = size / 2, cy = size / 2;
   const radius = size * 0.38;
 
-  const allStats = {};
-  allPlayers.forEach(p => {
-    let gamesPlayed = 0, landlordGames = 0, wins = 0, landlordWins = 0, farmerWins = 0, bigWins = 0, bigLosses = 0;
-    games.forEach(g => {
-      let score = 0, isLandlord = false;
-      // Use scores map if available
-      if (g.scores && g.scores[p] !== undefined) {
-        score = g.scores[p];
-        isLandlord = (p === g.landlord);
-      } else if (p === g.landlord) {
-        score = g.landlordScore; isLandlord = true;
-      } else if (p === g.farmer1 || p === g.farmer2) {
-        score = -g.landlordScore / 2;
-      } else return;
-      if (g.scores && g.scores[p] === undefined) return;
-      gamesPlayed++;
-      if (isLandlord) landlordGames++;
-      if (score > 0) { wins++; if (isLandlord) landlordWins++; else farmerWins++; }
-      if (Math.abs(score) >= 50) { if (score > 0) bigWins++; else bigLosses++; }
-    });
-    const farmerGames = gamesPlayed - landlordGames;
-    allStats[p] = {
-      engagement: gamesPlayed,
-      landlordRate: gamesPlayed > 0 ? landlordGames / gamesPlayed : 0,
-      winRate: gamesPlayed > 0 ? wins / gamesPlayed : 0,
-      volatility: gamesPlayed > 0 ? (bigWins + bigLosses) / gamesPlayed : 0,
-      attack: landlordGames > 0 ? landlordWins / landlordGames : 0,
-      defense: farmerGames > 0 ? farmerWins / farmerGames : 0,
-    };
-  });
+  // Calculate stats using APK-matching logic
+  const baseStats = calculateAllRadarStats(games, allPlayers);
+  // Apply hybrid normalization for selected players
+  const allStats = normalizeForSelectedPlayers(baseStats, players);
 
   const dims = ['engagement', 'landlordRate', 'winRate', 'volatility', 'attack', 'defense'];
-  const maxVals = {};
-  dims.forEach(d => { maxVals[d] = Math.max(...allPlayers.map(p => allStats[p][d]), 0.01); });
-
   const dimLabels = [
     t('radar_engagement'), t('radar_landlord_rate'), t('radar_win_rate'),
     t('radar_volatility'), t('radar_attack'), t('radar_defense'),
@@ -1826,16 +2171,17 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
     if (!stats) return;
     const color = colors[pIdx % colors.length];
     let points = '';
+    // Use normalized 0-1 values directly for polygon (they are already normalized)
     dims.forEach((d, i) => {
-      const val = stats[d] / maxVals[d];
-      const r = radius * Math.max(val, 0.05);
+      const val = Math.max(stats[d], 0.05);
+      const r = radius * val;
       const angle = startAngle + angleStep * i;
       points += `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)} `;
     });
     svg += `<polygon points="${points}" fill="${color}25" stroke="${color}" stroke-width="2.5"/>`;
     dims.forEach((d, i) => {
-      const val = stats[d] / maxVals[d];
-      const r = radius * Math.max(val, 0.05);
+      const val = Math.max(stats[d], 0.05);
+      const r = radius * val;
       const angle = startAngle + angleStep * i;
       svg += `<circle cx="${(cx + r * Math.cos(angle)).toFixed(1)}" cy="${(cy + r * Math.sin(angle)).toFixed(1)}" r="4" fill="${color}"/>`;
     });
@@ -1852,9 +2198,8 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
   });
   legend += '</div>';
 
-  // Radar data table - show each player's 6 dimension raw values
+  // Radar data table - show each player's 6 dimension RAW values (from baseStats, not normalized)
   let dataTable = '<div style="width:100%;margin-top:12px;padding:0 8px">';
-  const dimKeys = ['engagement', 'landlordRate', 'winRate', 'volatility', 'attack', 'defense'];
   const dimLabelsTable = [
     t('radar_engagement'), t('radar_landlord_rate'), t('radar_win_rate'),
     t('radar_volatility'), t('radar_attack'), t('radar_defense'),
@@ -1864,7 +2209,7 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
     t('radar_desc_volatility'), t('radar_desc_attack'), t('radar_desc_defense'),
   ];
   players.forEach((player, pIdx) => {
-    const stats = allStats[player];
+    const stats = baseStats[player]; // Use baseStats for raw values
     if (!stats) return;
     const color = colors[pIdx % colors.length];
     if (players.length > 1) {
@@ -1873,14 +2218,15 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
         <span style="font-size:13px;font-weight:600;color:var(--fg)">${player}</span>
       </div>`;
     }
-    dimKeys.forEach((key, i) => {
+    const rawKeys = ['rawGamesPlayed', 'rawLandlordRate', 'rawWinRate', 'rawVolatility', 'rawAttackWinRate', 'rawDefenseWinRate'];
+    rawKeys.forEach((key, i) => {
       let value = '';
-      if (key === 'engagement') value = stats.engagement + t('radar_games_unit');
-      else if (key === 'landlordRate') value = (stats.landlordRate * 100).toFixed(1) + '%';
-      else if (key === 'winRate') value = (stats.winRate * 100).toFixed(1) + '%';
-      else if (key === 'volatility') value = (stats.volatility * 100).toFixed(1) + '%';
-      else if (key === 'attack') value = (stats.attack * 100).toFixed(1) + '%';
-      else if (key === 'defense') value = (stats.defense * 100).toFixed(1) + '%';
+      if (key === 'rawGamesPlayed') value = stats.rawGamesPlayed + t('radar_games_unit');
+      else if (key === 'rawLandlordRate') value = (stats.rawLandlordRate * 100).toFixed(1) + '%';
+      else if (key === 'rawWinRate') value = (stats.rawWinRate * 100).toFixed(1) + '%';
+      else if (key === 'rawVolatility') value = (stats.rawVolatility * 100).toFixed(1) + '%';
+      else if (key === 'rawAttackWinRate') value = (stats.rawAttackWinRate * 100).toFixed(1) + '%';
+      else if (key === 'rawDefenseWinRate') value = (stats.rawDefenseWinRate * 100).toFixed(1) + '%';
       dataTable += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;color:var(--fg)">${dimLabelsTable[i]}</div>
