@@ -5,8 +5,8 @@ const AppState = {
     theme: 'light',
     fontSize: 'medium',
     language: 'zh-TW',
-    bgm: false,
-    sfx: false,
+    bgm: true,
+    sfx: true,
   },
   players: [],
   scoreOptions: [],
@@ -37,32 +37,52 @@ const UNDO_WINDOW_MS = 60000;
 const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
 const STATS_RANGES = ['本回合', '所有局数', '最近100局', '最近500局', '最近1000局', '最近参与的1000局'];
 
+// ===== Auth State =====
+let authPhase = 'splash'; // splash, login, checking, authorized, denied, check_failed
+
 // ===== Initialization =====
 async function onReady() {
   if (window._fllInitDone) return;
   window._fllInitDone = true;
   loadSettings();
-  applyTheme();
   applyFontScale();
   updateTabLabels();
-
-  // Check cached auth
-  const cachedEmail = API.getCachedAuthEmail();
-  if (cachedEmail) {
-    API.setAuthEmail(cachedEmail);
-    hideLoginScreen();
-    await initApp();
-  } else {
-    showLoginScreen();
-  }
 
   window.addEventListener('online', () => { AppState.isOnline = true; delete AppState._tabRenderedToken[AppState.currentTab]; renderTab(AppState.currentTab); });
   window.addEventListener('offline', () => { AppState.isOnline = false; delete AppState._tabRenderedToken[AppState.currentTab]; renderTab(AppState.currentTab); });
 
-  // Health check every 30s
-  setInterval(performHealthCheck, 30000);
-  // Initial health check after 3s
-  setTimeout(performHealthCheck, 3000);
+  // Start splash screen
+  authPhase = 'splash';
+  showAuthGate();
+
+  // After 2s splash, check cached auth
+  setTimeout(async () => {
+    const cachedEmail = API.getCachedAuthEmail();
+    if (cachedEmail) {
+      // Have cached auth - show checking then authorize
+      API.setAuthEmail(cachedEmail);
+      authPhase = 'checking';
+      showAuthContent_Checking(cachedEmail);
+      try {
+        const result = await API.checkSheetAccess(cachedEmail);
+        if (result.hasAccess) {
+          API.saveAuthData(cachedEmail, result.role);
+          await transitionToAuthorized();
+        } else {
+          authPhase = 'denied';
+          showAuthContent_Denied(cachedEmail);
+        }
+      } catch (err) {
+        // Network error - use cached auth anyway
+        console.warn('[Auth] Check failed, using cached auth:', err);
+        await transitionToAuthorized();
+      }
+    } else {
+      // No cached auth - show login
+      authPhase = 'login';
+      showAuthContent_Login();
+    }
+  }, 2000);
 }
 
 // Auto-call: handle both cases (DOM already loaded or not yet)
@@ -164,7 +184,10 @@ function updateTabLabels() {
 // Track last rendered refreshToken per tab to avoid unnecessary re-renders
 if (!AppState._tabRenderedToken) AppState._tabRenderedToken = {};
 
+const TAB_ORDER = ['score', 'history', 'stats', 'settings'];
+
 function switchTab(tab) {
+  playSfx('tap');
   AppState.currentTab = tab;
   // Update tab bar active state
   document.querySelectorAll('.tab-item').forEach(el => {
@@ -180,6 +203,35 @@ function switchTab(tab) {
   if (tab === 'settings' || lastToken === undefined || lastToken !== AppState.refreshToken) {
     renderTab(tab);
   }
+}
+
+// ===== Swipe Navigation =====
+function setupSwipeNavigation() {
+  const pageContent = document.getElementById('page-content');
+  if (!pageContent || pageContent._swipeSetup) return;
+  pageContent._swipeSetup = true;
+  let startX = 0, startY = 0, startTime = 0;
+  pageContent.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startTime = Date.now();
+  }, { passive: true });
+  pageContent.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    const dt = Date.now() - startTime;
+    // Must be horizontal swipe: |dx| > 60px, |dy| < |dx|, within 500ms
+    if (Math.abs(dx) > 60 && Math.abs(dy) < Math.abs(dx) && dt < 500) {
+      const currentIdx = TAB_ORDER.indexOf(AppState.currentTab);
+      if (dx < 0 && currentIdx < TAB_ORDER.length - 1) {
+        // Swipe left → next tab
+        switchTab(TAB_ORDER[currentIdx + 1]);
+      } else if (dx > 0 && currentIdx > 0) {
+        // Swipe right → previous tab
+        switchTab(TAB_ORDER[currentIdx - 1]);
+      }
+    }
+  }, { passive: true });
 }
 
 function renderTab(tab) {
@@ -223,47 +275,193 @@ function updatePendingBadge() {
   }
 }
 
-// ===== Login =====
-function showLoginScreen() {
-  const el = document.getElementById('login-screen');
-  if (el) el.classList.remove('hidden');
-  const versionEl = document.getElementById('login-version');
-  if (versionEl) versionEl.textContent = `${t('auth_app_version')} ${APP_VERSION}`;
+// ===== Auth Gate Functions =====
+function showAuthGate() {
+  const gate = document.getElementById('auth-gate');
+  const mainApp = document.getElementById('main-app');
+  if (gate) { gate.classList.remove('hidden', 'fade-out'); }
+  if (mainApp) mainApp.classList.add('hidden');
+  // Reset logo to center position
+  const logoGroup = document.getElementById('auth-logo-group');
+  if (logoGroup) { logoGroup.classList.add('auth-logo-center'); logoGroup.classList.remove('auth-logo-shifted'); }
+  // Hide content
+  const content = document.getElementById('auth-content');
+  if (content) { content.classList.add('hidden'); content.classList.remove('visible'); }
 }
 
-function hideLoginScreen() {
-  const el = document.getElementById('login-screen');
-  if (el) el.classList.add('hidden');
+function showAuthContent_Login() {
+  const logoGroup = document.getElementById('auth-logo-group');
+  if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
+  const content = document.getElementById('auth-content');
+  if (!content) return;
+  content.innerHTML = `
+    <input type="email" id="auth-email-input" class="auth-email-input" placeholder="Google Email" autocomplete="email" autocapitalize="off">
+    <button class="auth-btn-primary" id="auth-login-btn" onclick="handleLogin()">
+      <span class="material-icons" style="font-size:20px">login</span>
+      <span>${t('auth_login_button')}</span>
+    </button>
+    <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
+  `;
+  content.classList.remove('hidden');
+  setTimeout(() => content.classList.add('visible'), 50);
+  // Enter key on email input
+  const emailInput = document.getElementById('auth-email-input');
+  if (emailInput) {
+    emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
+    emailInput.focus();
+  }
+}
+
+function showAuthContent_Checking(email) {
+  const logoGroup = document.getElementById('auth-logo-group');
+  if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
+  const content = document.getElementById('auth-content');
+  if (!content) return;
+  content.innerHTML = `
+    <div class="auth-spinner"></div>
+    <div class="auth-status-text">${t('auth_checking') || '正在檢查權限...'}</div>
+    <div class="auth-email-text">${email}</div>
+  `;
+  content.classList.remove('hidden');
+  setTimeout(() => content.classList.add('visible'), 50);
+}
+
+function showAuthContent_CheckFailed(email, errorMsg) {
+  const logoGroup = document.getElementById('auth-logo-group');
+  if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
+  const content = document.getElementById('auth-content');
+  if (!content) return;
+  content.innerHTML = `
+    <div class="auth-error-text">${errorMsg || t('auth_check_failed') || '無法連接伺服器'}</div>
+    <div class="auth-email-text">${email}</div>
+    <button class="auth-btn-primary" onclick="retryAuthCheck()">
+      <span class="material-icons" style="font-size:20px">refresh</span>
+      <span>${t('auth_retry') || '重試'}</span>
+    </button>
+    <button class="auth-btn-secondary" onclick="handleLogout()">
+      <span class="material-icons" style="font-size:20px">logout</span>
+      <span>${t('settings_logout') || '登出'}</span>
+    </button>
+  `;
+  content.classList.remove('hidden');
+  setTimeout(() => content.classList.add('visible'), 50);
+}
+
+function showAuthContent_Denied(email) {
+  const logoGroup = document.getElementById('auth-logo-group');
+  if (logoGroup) { logoGroup.classList.remove('auth-logo-center'); logoGroup.classList.add('auth-logo-shifted'); }
+  const content = document.getElementById('auth-content');
+  if (!content) return;
+  content.innerHTML = `
+    <div class="auth-lock-icon"><span class="material-icons" style="font-size:48px">lock</span></div>
+    <div class="auth-user-card">
+      <div class="auth-user-card-email">${email}</div>
+      <div class="auth-user-card-role">${t('auth_no_access') || '沒有編輯權限'}</div>
+    </div>
+    <div class="auth-status-text" style="margin-bottom:24px">${t('auth_denied_msg') || '你沒有此 Google Sheet 的編輯權限。請聯繫管理員授權。'}</div>
+    <button class="auth-btn-primary" onclick="retryAuthCheck()">
+      <span class="material-icons" style="font-size:20px">refresh</span>
+      <span>${t('auth_recheck') || '重新檢查'}</span>
+    </button>
+    <button class="auth-btn-secondary" onclick="handleLogout()">
+      <span class="material-icons" style="font-size:20px">swap_horiz</span>
+      <span>${t('auth_switch_account') || '切換帳號'}</span>
+    </button>
+  `;
+  content.classList.remove('hidden');
+  setTimeout(() => content.classList.add('visible'), 50);
+}
+
+async function transitionToAuthorized() {
+  authPhase = 'authorized';
+  // Show main app behind the gate
+  const mainApp = document.getElementById('main-app');
+  if (mainApp) mainApp.classList.remove('hidden');
+  applyTheme();
+  setupSwipeNavigation();
+  await initApp();
+  // Start server status auto-test countdown (30s cycle)
+  runServerTest(); // Initial test immediately
+  startServerCountdown();
+  // Fade out the auth gate
+  const gate = document.getElementById('auth-gate');
+  if (gate) {
+    gate.classList.add('fade-out');
+    setTimeout(() => { gate.classList.add('hidden'); }, 600);
+  }
 }
 
 async function handleLogin() {
-  const loginBtn = document.getElementById('login-btn');
-  const emailInput = document.getElementById('login-email');
+  const loginBtn = document.getElementById('auth-login-btn');
+  const emailInput = document.getElementById('auth-email-input');
   if (loginBtn) loginBtn.disabled = true;
 
   const email = emailInput ? emailInput.value.trim() : '';
   if (!email || !email.includes('@')) {
     if (loginBtn) loginBtn.disabled = false;
-    showToast('Please enter a valid email address', 'error');
+    showToast(t('auth_invalid_email') || 'Please enter a valid email address', 'error');
     return;
   }
 
+  // Transition to checking phase
+  authPhase = 'checking';
+  showAuthContent_Checking(email);
+
   try {
-    // Check sheet access
     const result = await API.checkSheetAccess(email.trim());
     if (result.hasAccess) {
       API.setAuthEmail(email.trim());
       API.saveAuthData(email.trim(), result.role);
-      hideLoginScreen();
-      await initApp();
+      await transitionToAuthorized();
     } else {
-      alert('你沒有此 Google Sheet 的編輯權限。請聯繫管理員。');
+      authPhase = 'denied';
+      showAuthContent_Denied(email);
     }
   } catch (err) {
-    alert('連接伺服器失敗: ' + (err.message || '未知錯誤'));
-  } finally {
-    if (loginBtn) loginBtn.disabled = false;
+    authPhase = 'check_failed';
+    showAuthContent_CheckFailed(email, err.message || t('auth_check_failed') || '無法連接伺服器');
   }
+}
+
+async function retryAuthCheck() {
+  const authData = API.getAuthData();
+  const email = authData.email || API.getAuthEmail();
+  if (!email) {
+    handleLogout();
+    return;
+  }
+  authPhase = 'checking';
+  showAuthContent_Checking(email);
+  try {
+    const result = await API.checkSheetAccess(email);
+    if (result.hasAccess) {
+      API.setAuthEmail(email);
+      API.saveAuthData(email, result.role);
+      await transitionToAuthorized();
+    } else {
+      authPhase = 'denied';
+      showAuthContent_Denied(email);
+    }
+  } catch (err) {
+    authPhase = 'check_failed';
+    showAuthContent_CheckFailed(email, err.message);
+  }
+}
+
+function handleLogout() {
+  API.clearAuth();
+  // Reset main app
+  const mainApp = document.getElementById('main-app');
+  if (mainApp) mainApp.classList.add('hidden');
+  // Reset tab rendered tokens
+  AppState._tabRenderedToken = {};
+  // Show splash for 2s then login
+  authPhase = 'splash';
+  showAuthGate();
+  setTimeout(() => {
+    authPhase = 'login';
+    showAuthContent_Login();
+  }, 2000);
 }
 
 // ===== Picker Modal =====
@@ -295,6 +493,7 @@ function openPicker(title, items, selectedValue, callback) {
 }
 
 function selectPickerItem(value) {
+  playSfx('tap');
   if (pickerCallback) pickerCallback(value);
   closePicker();
 }
@@ -337,11 +536,7 @@ function renderScorePage(container) {
   html += `<div id="score-form-area">${buildScoreFormHTML(s, scoreClass, farmerScore)}</div>`;
 
   if (pending.length > 0) {
-    html += `<div class="pending-panel">
-      <span class="material-icons">cloud_upload</span>
-      <span class="pending-text">${pending.length} ${t('score_pending_sync')}</span>
-      <button class="pending-sync-btn" onclick="syncPending()">${t('settings_sync_now')}</button>
-    </div>`;
+    html += renderPendingSyncPanel('compact', pending);
   }
 
   html += `<div class="round-section">
@@ -460,7 +655,7 @@ function buildScoreFormHTML(s, scoreClass, farmerScore) {
   }
 
   html += `<div class="button-row">
-    <button class="submit-btn" onclick="handleSubmit()" ${AppState.score._submitting ? 'disabled' : ''}>
+    <button class="submit-btn" onclick="playSfx('card'); handleSubmit()" ${AppState.score._submitting ? 'disabled' : ''}>
       <span class="material-icons">send</span>
       ${AppState.score._submitting ? t('score_submitting') : t('score_submit')}
     </button>
@@ -542,6 +737,7 @@ function applyLastCombo() {
 }
 
 function handleClear() {
+  playSfx('tap');
   AppState.score = { landlord: '', farmer1: '', farmer2: '', selectedScore: null };
   updateScoreFormUI();
 }
@@ -663,6 +859,7 @@ function clearUndoTimer() {
 }
 
 async function handleUndo() {
+  playSfx('tap');
   const info = AppState.undoInfo;
   if (!info) return;
 
@@ -694,21 +891,176 @@ async function handleUndo() {
   }
 }
 
-async function syncPending() {
+// ===== PENDING SYNC PANEL (matches APK PendingSyncPanel) =====
+let _pendingSyncExpanded = false;
+let _pendingSyncing = false;
+
+function renderPendingSyncPanel(mode, pending) {
+  if (pending.length === 0) {
+    if (mode === 'full') {
+      return `<div class="settings-card"><div class="settings-row"><span class="settings-row-label">${t('settings_pending_records')}</span><span class="settings-row-value">${t('settings_no_pending')}</span></div></div>`;
+    }
+    return '';
+  }
+
+  const isConnected = AppState.connectionStatus === 'normal' || AppState.connectionStatus === 'slow';
+  const panelClass = mode === 'full' ? 'sync-panel-full' : 'sync-panel-compact';
+
+  let html = `<div class="sync-panel ${panelClass}">`;
+
+  // Header row
+  html += `<div class="sync-panel-header" onclick="toggleSyncExpanded()">`;
+  html += `<div class="sync-panel-header-left">`;
+  html += `<span class="material-icons" style="color:var(--warning);font-size:16px">cloud_upload</span>`;
+  html += `<span style="color:var(--warning);font-size:calc(13px * var(--font-scale));font-weight:600;margin-left:6px">${pending.length} ${t('score_pending_sync')}</span>`;
+  html += `<span class="material-icons" style="color:var(--warning);font-size:18px;margin-left:4px">${_pendingSyncExpanded ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}</span>`;
+  html += `<span style="color:var(--muted);font-size:calc(11px * var(--font-scale));margin-left:4px">${_pendingSyncExpanded ? t('sync_panel_hide_details') : t('sync_panel_view_details')}</span>`;
+  html += `</div>`;
+
+  // Sync button
+  html += `<button class="sync-panel-sync-btn" onclick="event.stopPropagation();handleSyncPending()" ${_pendingSyncing || !isConnected ? 'disabled' : ''}>`;
+  if (_pendingSyncing) {
+    html += `<span class="spinner" style="width:12px;height:12px;border-width:2px"></span>`;
+    html += `<span style="margin-left:4px">${t('sync_panel_syncing')}</span>`;
+  } else {
+    html += `<span class="material-icons" style="font-size:14px">sync</span>`;
+    html += `<span style="margin-left:4px">${t('sync_panel_sync_now')}</span>`;
+  }
+  html += `</button>`;
+  html += `</div>`;
+
+  // Server offline hint
+  if (!isConnected) {
+    html += `<div class="sync-panel-offline"><span class="material-icons" style="font-size:14px">cloud_off</span><span style="margin-left:6px">${t('sync_panel_server_offline')}</span></div>`;
+  }
+
+  // Expanded detail list
+  if (_pendingSyncExpanded) {
+    html += `<div class="sync-panel-details">`;
+    pending.forEach((item, idx) => {
+      const time = formatPendingTime(item.timestamp);
+      const scoreColor = item.landlordScore > 0 ? 'var(--success)' : item.landlordScore < 0 ? 'var(--error)' : 'var(--foreground)';
+      const scorePrefix = item.landlordScore > 0 ? '+' : '';
+      html += `<div class="sync-panel-item" oncontextmenu="event.preventDefault();showPendingActions('${item.id}')" onclick="showPendingActions('${item.id}')">`;
+      html += `<span class="sync-item-time">${time}</span>`;
+      html += `<span class="sync-item-landlord">\u{1F3A9} ${item.landlord}</span>`;
+      html += `<span class="sync-item-score" style="color:${scoreColor}">${scorePrefix}${item.landlordScore}</span>`;
+      html += `<span class="sync-item-farmers">\u{1F416}${item.farmer1} \u{1F413}${item.farmer2}</span>`;
+      html += `</div>`;
+    });
+
+    // Hint
+    html += `<div style="color:var(--muted);font-size:calc(10px * var(--font-scale));text-align:center;margin-top:6px;opacity:0.8">\u{1F5B1}\uFE0F ${t('pending_action_edit')}/${t('pending_action_delete')}</div>`;
+
+    // Force clear
+    html += `<button class="sync-panel-force-clear" onclick="event.stopPropagation();forceClearPending()">`;
+    html += `<span class="material-icons" style="font-size:14px">delete_sweep</span>`;
+    html += `<span style="margin-left:6px">${t('sync_panel_force_clear')}</span>`;
+    html += `</button>`;
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function formatPendingTime(timestamp) {
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return '--:--:--';
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  } catch { return '--:--:--'; }
+}
+
+function toggleSyncExpanded() {
+  _pendingSyncExpanded = !_pendingSyncExpanded;
+  playSfx('tap');
+  // Re-render current tab to update the panel
+  AppState._tabRenderedToken = {};
+  renderTab(AppState.currentTab);
+}
+
+async function handleSyncPending() {
+  if (_pendingSyncing) return;
+  _pendingSyncing = true;
+  playSfx('tap');
+  // Update UI to show syncing state
+  AppState._tabRenderedToken = {};
+  renderTab(AppState.currentTab);
+
   try {
     const result = await API.syncPendingSubmissions();
     updatePendingBadge();
     AppState.refreshToken++;
+    _pendingSyncing = false;
+
     if (result.failed > 0) {
       showToast(`${t('settings_sync_result')}: ${result.failed} ${t('settings_sync_failed_suffix')}`, 'error');
     } else {
       showToast(t('toast_sync_success').replace('{count}', result.synced), 'success');
+      if (result.synced > 0) _pendingSyncExpanded = false;
     }
-    // Invalidate all tab caches since data changed
     AppState._tabRenderedToken = {};
     renderTab(AppState.currentTab);
   } catch {
+    _pendingSyncing = false;
     showToast(t('settings_sync_error'), 'error');
+    AppState._tabRenderedToken = {};
+    renderTab(AppState.currentTab);
+  }
+}
+
+// Legacy alias
+async function syncPending() { handleSyncPending(); }
+
+function showPendingActions(itemId) {
+  const pending = API.getPendingSubmissions();
+  const item = pending.find(p => p.id === itemId);
+  if (!item) return;
+
+  const action = prompt(
+    `${t('pending_action_title')}\n\u{1F3A9} ${item.landlord} (${item.landlordScore > 0 ? '+' : ''}${item.landlordScore})\n\n1 = ${t('pending_action_edit')}\n2 = ${t('pending_action_delete')}\n0 = ${t('score_confirm_cancel')}`,
+    '0'
+  );
+
+  if (action === '1') {
+    editPendingItem(item);
+  } else if (action === '2') {
+    deletePendingItem(item);
+  }
+}
+
+function editPendingItem(item) {
+  const landlord = prompt(`\u{1F3A9} ${t('score_landlord')}:`, item.landlord);
+  if (landlord === null) return;
+  const score = prompt(`\u{1F3AF} ${t('score_score_label')}:`, String(item.landlordScore));
+  if (score === null) return;
+  const farmer1 = prompt(`\u{1F416} ${t('score_farmer1')}:`, item.farmer1);
+  if (farmer1 === null) return;
+  const farmer2 = prompt(`\u{1F413} ${t('score_farmer2')}:`, item.farmer2);
+  if (farmer2 === null) return;
+
+  API.updatePendingSubmission(item.id, {
+    landlord: landlord.trim() || item.landlord,
+    landlordScore: parseInt(score) || item.landlordScore,
+    farmer1: farmer1.trim() || item.farmer1,
+    farmer2: farmer2.trim() || item.farmer2,
+  });
+  updatePendingBadge();
+  AppState.refreshToken++;
+  AppState._tabRenderedToken = {};
+  renderTab(AppState.currentTab);
+  showToast('Updated', 'success');
+}
+
+function deletePendingItem(item) {
+  if (confirm(t('pending_action_delete_confirm'))) {
+    API.removePendingSubmission(item.id);
+    updatePendingBadge();
+    AppState.refreshToken++;
+    AppState._tabRenderedToken = {};
+    renderTab(AppState.currentTab);
+    showToast('Deleted', 'success');
   }
 }
 
@@ -725,6 +1077,7 @@ function renderHistoryPage(container) {
 
   const hasDateFilter = h.dateFrom || h.dateTo;
   html += `<div class="history-search">
+    <span class="material-icons search-icon">search</span>
     <input class="search-input" type="text" placeholder="${t('history_search_placeholder')}" value="${h.searchQuery}" oninput="updateHistorySearch(this.value)">
     <button class="filter-btn ${hasDateFilter ? 'active' : ''}" onclick="openDateFilter()">
       <span class="material-icons">date_range</span>
@@ -807,7 +1160,7 @@ async function loadHistory(reset = false) {
 
   h.loading = true;
   const footerEl = document.getElementById('history-footer');
-  if (footerEl) footerEl.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+  if (footerEl) footerEl.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><span style="color:var(--muted);font-size:14px;margin-left:8px">${t('common_loading')}</span></div>`;
 
   try {
     const batchSize = h.offset === 0 ? 200 : 100;
@@ -1311,6 +1664,7 @@ function renderStatsContent(contentEl) {
 }
 
 function changeStatsRange(range) {
+  playSfx('tap');
   AppState.stats.range = range;
   // Force re-render stats page (refreshToken hasn't changed, but range did)
   delete AppState._tabRenderedToken['stats'];
@@ -1393,36 +1747,7 @@ function renderSettingsPage(container) {
     </div>
   </div>`;
 
-  // Server
-  html += `<div class="settings-section">
-    <div class="settings-section-title">${t('settings_server_status')}</div>
-    <div class="settings-card">
-      <div class="settings-row">
-        <span class="settings-row-label">${t('settings_server_status')}</span>
-        <div class="server-status">
-          <span id="server-status-text" class="settings-row-value">${getServerStatusText()}</span>
-          <span id="server-status-dot" class="status-dot ${getServerStatusClass()}"></span>
-          <button class="settings-action-btn" onclick="testServerConnection()" style="margin-left:8px">${t('settings_server_test_button')}</button>
-        </div>
-      </div>
-    </div>
-  </div>`;
-
-  // Offline sync
-  html += `<div class="settings-section">
-    <div class="settings-section-title">${t('settings_offline_sync')}</div>
-    <div class="settings-card">
-      <div class="settings-row">
-        <span class="settings-row-label">${t('settings_pending_records')}</span>
-        <span class="settings-row-value">${pending.length > 0 ? pending.length : t('settings_no_pending')}</span>
-      </div>`;
-  if (pending.length > 0) {
-    html += `<div class="settings-row"><button class="settings-action-btn" onclick="syncPending()" style="width:100%">${t('settings_sync_now')}</button></div>
-      <div class="settings-row"><button class="settings-action-btn danger" onclick="forceClearPending()" style="width:100%">${t('sync_panel_force_clear')}</button></div>`;
-  }
-  html += `</div></div>`;
-
-  // Audio
+  // Audio (moved right after Display, matching APK order)
   html += `<div class="settings-section">
     <div class="settings-section-title">${t('settings_audio')}</div>
     <div class="settings-card">
@@ -1445,6 +1770,29 @@ function renderSettingsPage(container) {
         </label>
       </div>
     </div>
+  </div>`;
+
+  // Server Status (with 30s auto-test countdown, matching APK)
+  html += `<div class="settings-section">
+    <div class="settings-section-title">${t('settings_server_status')}</div>
+    <div class="settings-card">
+      <div class="settings-row">
+        <div style="display:flex;align-items:center;gap:8px;flex:1">
+          <span id="server-status-dot" class="status-dot ${getServerStatusClass()}"></span>
+          <span id="server-status-text" style="font-weight:600;color:var(--${AppState.connectionStatus === 'normal' ? 'success' : AppState.connectionStatus === 'slow' ? 'warning' : AppState.connectionStatus === 'failed' ? 'error' : 'muted'})">${getServerStatusText()}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="server-countdown" style="color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums">${_serverCountdown}s</span>
+          <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" ${_serverTesting ? 'disabled' : ''}>${_serverTesting ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>' : t('settings_server_test_button')}</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // Offline sync
+  html += `<div class="settings-section">
+    <div class="settings-section-title">${t('settings_offline_sync')}</div>
+    ${renderPendingSyncPanel('full', pending)}
   </div>`;
 
   // Account
@@ -1602,27 +1950,87 @@ function getServerStatusClass() {
   }
 }
 
-async function testServerConnection() {
+// Server auto-test countdown state
+let _serverCountdown = 30;
+let _serverTesting = false;
+let _serverCountdownTimer = null;
+
+function startServerCountdown() {
+  _serverCountdown = 30;
+  if (_serverCountdownTimer) clearInterval(_serverCountdownTimer);
+  _serverCountdownTimer = setInterval(() => {
+    _serverCountdown--;
+    // Update countdown display without re-rendering the whole page
+    const el = document.getElementById('server-countdown');
+    if (el) el.textContent = _serverCountdown + 's';
+    if (_serverCountdown <= 0) {
+      clearInterval(_serverCountdownTimer);
+      _serverCountdownTimer = null;
+      runServerTest();
+    }
+  }, 1000);
+}
+
+async function runServerTest() {
+  _serverTesting = true;
   AppState.connectionStatus = 'testing';
-  const statusText = document.getElementById('server-status-text');
-  const statusDot = document.getElementById('server-status-dot');
-  if (statusText) statusText.textContent = t('settings_server_testing');
-  if (statusDot) statusDot.className = 'status-dot testing';
+  updateServerStatusUI();
 
   const result = await API.testConnectionWithLatency();
   AppState.connectionStatus = result.ok ? (result.latencyMs > 3000 ? 'slow' : 'normal') : 'failed';
   AppState.isOnline = result.ok;
+  _serverTesting = false;
+  updateServerStatusUI();
+  startServerCountdown();
+}
 
-  if (statusText) statusText.textContent = getServerStatusText();
+function handleManualServerTest() {
+  if (_serverTesting) return;
+  playSfx('tap');
+  if (_serverCountdownTimer) clearInterval(_serverCountdownTimer);
+  _serverCountdownTimer = null;
+  runServerTest();
+}
+
+function updateServerStatusUI() {
+  const statusText = document.getElementById('server-status-text');
+  const statusDot = document.getElementById('server-status-dot');
+  const countdownEl = document.getElementById('server-countdown');
+  const testBtn = document.getElementById('server-test-btn');
+
+  const statusColor = AppState.connectionStatus === 'normal' ? 'var(--success)'
+    : AppState.connectionStatus === 'slow' ? 'var(--warning)'
+    : AppState.connectionStatus === 'failed' ? 'var(--error)'
+    : 'var(--muted)';
+
+  if (statusText) {
+    statusText.textContent = getServerStatusText();
+    statusText.style.color = statusColor;
+  }
   if (statusDot) statusDot.className = `status-dot ${getServerStatusClass()}`;
+  if (countdownEl) countdownEl.textContent = _serverTesting ? '...' : _serverCountdown + 's';
+  if (testBtn) {
+    testBtn.disabled = _serverTesting;
+    testBtn.innerHTML = _serverTesting
+      ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>'
+      : t('settings_server_test_button');
+  }
+}
+
+// Legacy alias for backward compatibility
+async function testServerConnection() {
+  handleManualServerTest();
 }
 
 function forceClearPending() {
   if (confirm(t('sync_panel_force_clear_confirm'))) {
     API.clearPendingSubmissions();
     updatePendingBadge();
+    _pendingSyncExpanded = false;
+    AppState.refreshToken++;
     showToast(t('sync_panel_cleared'), 'success');
-    renderTab('settings');
+    AppState._tabRenderedToken = {};
+    renderTab(AppState.currentTab);
   }
 }
 

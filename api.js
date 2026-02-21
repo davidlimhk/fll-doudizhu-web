@@ -192,8 +192,8 @@ const API = {
     localStorage.removeItem(STORAGE_KEYS.AUTH_EMAIL);
     localStorage.removeItem(STORAGE_KEYS.AUTH_VERIFIED_AT);
     localStorage.removeItem(STORAGE_KEYS.AUTH_ROLE);
-    // Show login screen
-    if (typeof showLoginScreen === 'function') showLoginScreen();
+    // Show auth gate (logout flow)
+    if (typeof handleLogout === 'function') handleLogout();
   },
 
   // ===== Parameters =====
@@ -432,6 +432,15 @@ const API = {
   removePendingSubmission(id) {
     const pending = this.getPendingSubmissions().filter(p => p.id !== id);
     localStorage.setItem(STORAGE_KEYS.PENDING_QUEUE, JSON.stringify(pending));
+  },
+
+  updatePendingSubmission(id, updates) {
+    const pending = this.getPendingSubmissions();
+    const idx = pending.findIndex(p => p.id === id);
+    if (idx >= 0) {
+      Object.assign(pending[idx], updates);
+      localStorage.setItem(STORAGE_KEYS.PENDING_QUEUE, JSON.stringify(pending));
+    }
   },
 
   clearPendingSubmissions() {
