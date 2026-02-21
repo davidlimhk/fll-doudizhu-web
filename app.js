@@ -32,7 +32,7 @@ const AppState = {
   stats: { range: '本回合', data: [], loading: false, historyGames: [], selectedPlayers: [], loadingHistory: false },
 };
 
-const APP_VERSION = 'v2.0.59';
+const APP_VERSION = 'v2.0.60';
 const GOOGLE_CLIENT_ID = '816020476016-r670uelh69npagn3hj7cu5odd2sv0s2u.apps.googleusercontent.com';
 const UNDO_WINDOW_MS = 60000;
 const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
@@ -1253,6 +1253,18 @@ function deletePendingItem(item) {
 }
 
 // ===== HISTORY PAGE =====
+
+// Helper: update pending items in the existing h.games array without resetting all data.
+// Removes old pending entries and re-merges current pending queue at the top.
+function _refreshPendingInHistory() {
+  const h = AppState.history;
+  // Strip out old pending entries
+  const serverGames = h.games.filter(g => !g.isPending);
+  // Re-merge current pending queue
+  const pending = API.getPendingSubmissions();
+  h.games = mergeWithPending(serverGames, pending);
+}
+
 function renderHistoryPage(container) {
   const h = AppState.history;
   let html = '';
@@ -1284,7 +1296,23 @@ function renderHistoryPage(container) {
 
   container.innerHTML = html;
   setupPullToRefresh(container);
-  loadHistory(true);
+
+  // KEY FIX: If we already have loaded history data and we're offline (or just re-rendering),
+  // don't reset and reload from scratch — just re-render the existing data.
+  // This prevents losing 8000+ loaded games and falling back to 200-entry cache.
+  if (h.games.length > 0 && !AppState.isOnline) {
+    // Offline with existing data: re-merge pending data and re-render
+    _refreshPendingInHistory();
+    renderHistoryList();
+  } else if (h.games.length > 0 && !h._forceReload) {
+    // Online with existing data and no explicit reload request: re-merge pending and re-render
+    _refreshPendingInHistory();
+    renderHistoryList();
+  } else {
+    // First load, or explicit reload requested: fetch from server/cache
+    h._forceReload = false;
+    loadHistory(true);
+  }
 }
 
 // ===== Pull-to-refresh for history page =====
@@ -1327,10 +1355,12 @@ function setupPullToRefresh(container) {
       }
       // Full data refresh: clear caches, re-download everything
       handleRefreshAllData().then(() => {
-        if (indicator) indicator.classList.add('hidden');
+        if (indicator) { indicator.classList.add('hidden'); indicator.style.height = '0'; }
+      }).catch(() => {
+        if (indicator) { indicator.classList.add('hidden'); indicator.style.height = '0'; }
       });
     } else {
-      if (indicator) indicator.classList.add('hidden');
+      if (indicator) { indicator.classList.add('hidden'); indicator.style.height = '0'; }
     }
     pulling = false;
     triggered = false;
@@ -2326,7 +2356,10 @@ async function handleRefreshAllData() {
   // Check if online before clearing cache
   if (!navigator.onLine) {
     showToast(t('common_offline_cannot_refresh') || '離線狀態無法刷新數據', 'warning');
-    // Still re-render with existing cached data (don't clear anything)
+    // Hide the pull indicator immediately so it doesn't hang
+    const indicator = document.getElementById('history-pull-indicator');
+    if (indicator) { indicator.classList.add('hidden'); indicator.style.height = '0'; }
+    // Don't clear anything - keep existing data intact
     return;
   }
 
@@ -2340,6 +2373,7 @@ async function handleRefreshAllData() {
   AppState.history.games = [];
   AppState.history.offset = 0;
   AppState.history.hasMore = true;
+  AppState.history._forceReload = true; // Signal renderHistoryPage to reload from server
   // Reset expanded rounds
   AppState.expandedRounds.clear();
   AppState._historyFirstRender = true;

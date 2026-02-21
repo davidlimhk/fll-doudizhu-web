@@ -503,6 +503,7 @@ html, body {
 .toast.success { background: var(--success); }
 .toast.error { background: var(--error); }
 .toast.info { background: var(--primary); }
+.toast.warning { background: var(--warning); color: #11181C; }
 
 /* ===== Undo Banner ===== */
 .undo-banner {
