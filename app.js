@@ -431,6 +431,10 @@ function handleGoogleCredentialResponse(response) {
   try {
     const payload = JSON.parse(atob(response.credential.split('.')[1]));
     const email = payload.email;
+    // Store Google token expiry (exp is in seconds, convert to ms)
+    if (payload.exp) {
+      window._googleTokenExp = payload.exp * 1000;
+    }
     if (email) {
       proceedWithGoogleEmail(email);
     } else {
@@ -478,7 +482,8 @@ async function proceedWithGoogleEmail(email) {
     const result = await API.checkSheetAccess(email.trim());
     if (result.hasAccess) {
       API.setAuthEmail(email.trim());
-      API.saveAuthData(email.trim(), result.role);
+      API.saveAuthData(email.trim(), result.role, window._googleTokenExp || null);
+      window._googleTokenExp = null;
       await transitionToAuthorized();
     } else {
       authPhase = 'denied';
@@ -1944,12 +1949,21 @@ function renderSettingsPage(container) {
 
 function getLoginValidityText(verifiedAt) {
   if (!verifiedAt) return t('common_unknown');
-  const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-  const expiresAt = parseInt(verifiedAt, 10) + CACHE_TTL;
-  if (expiresAt <= Date.now()) return t('auth_cache_expired');
+  const authData = API.getAuthData();
   const lang = AppState.settings.language;
   const locale = lang === 'en' ? 'en-US' : lang === 'zh-CN' ? 'zh-CN' : 'zh-TW';
-  return new Date(expiresAt).toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  // If we have Google token expiry, show it
+  if (authData.tokenExp) {
+    const tokenExpMs = parseInt(authData.tokenExp, 10);
+    if (tokenExpMs <= Date.now()) {
+      // Token expired but auth still valid (no hard expiry)
+      return lang === 'en' ? 'Persistent (re-verified on next launch)' : lang === 'zh-CN' ? '持久登入（下次啟動時重新驗證）' : '持久登入（下次啟動時重新驗證）';
+    }
+    const expStr = new Date(tokenExpMs).toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return lang === 'en' ? `Token valid until ${expStr}` : `Token 有效至 ${expStr}`;
+  }
+  // No token exp - show persistent login
+  return lang === 'en' ? 'Persistent (until logout)' : lang === 'zh-CN' ? '持久登入（直到登出）' : '持久登入（直到登出）';
 }
 
 // ===== Audio =====

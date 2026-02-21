@@ -13,12 +13,13 @@ const STORAGE_KEYS = {
   AUTH_EMAIL: '@fll_auth_email',
   AUTH_VERIFIED_AT: '@fll_auth_verified_at',
   AUTH_ROLE: '@fll_auth_role',
+  AUTH_TOKEN_EXP: '@fll_auth_token_exp',
 };
 
 const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbysRk-4xU1tvBmzm9qyowxbZMUtpQvx_2XftlZbuW9lrwhNz_m2KGQBdP7-yiP3J81C9A/exec';
 const API_SECRET = 'FLL_DDZ_2025_S3cR3t_K3y_X9mP2vQ7';
 const APP_VERSION_STR = '2.0.58';
-const PERMISSION_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+// No hardcoded TTL - auth stays valid until logout or permission revoked
 
 // Auth email (global)
 let _authEmail = null;
@@ -540,16 +541,18 @@ const API = {
         email: localStorage.getItem(STORAGE_KEYS.AUTH_EMAIL),
         verifiedAt: localStorage.getItem(STORAGE_KEYS.AUTH_VERIFIED_AT),
         role: localStorage.getItem(STORAGE_KEYS.AUTH_ROLE),
+        tokenExp: localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN_EXP),
       };
     } catch { return {}; }
   },
 
-  saveAuthData(email, role) {
+  saveAuthData(email, role, tokenExp) {
     const now = Date.now();
     localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, 'authorized');
     localStorage.setItem(STORAGE_KEYS.AUTH_EMAIL, email);
     localStorage.setItem(STORAGE_KEYS.AUTH_VERIFIED_AT, now.toString());
     localStorage.setItem(STORAGE_KEYS.AUTH_ROLE, role || 'editor');
+    if (tokenExp) localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN_EXP, tokenExp.toString());
   },
 
   clearAuth() {
@@ -558,13 +561,13 @@ const API = {
     localStorage.removeItem(STORAGE_KEYS.AUTH_EMAIL);
     localStorage.removeItem(STORAGE_KEYS.AUTH_VERIFIED_AT);
     localStorage.removeItem(STORAGE_KEYS.AUTH_ROLE);
+    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN_EXP);
   },
 
   isAuthCacheValid() {
     const data = this.getAuthData();
-    if (data.status !== 'authorized' || !data.email || !data.verifiedAt) return false;
-    const elapsed = Date.now() - parseInt(data.verifiedAt, 10);
-    return elapsed < PERMISSION_CACHE_TTL;
+    // No time-based expiry - valid as long as auth data exists
+    return data.status === 'authorized' && !!data.email;
   },
 
   getCachedAuthEmail() {
