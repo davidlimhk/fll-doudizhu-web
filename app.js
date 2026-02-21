@@ -157,8 +157,9 @@ function saveSetting(key, value) {
     updateTabLabels();
     // Language change invalidates all tab caches
     AppState._tabRenderedToken = {};
-    renderCurrentTab();
   }
+  // Always re-render settings page so segmented controls update visually
+  renderSettingsPage(document.getElementById('page-settings'));
 }
 
 function applyTheme() {
