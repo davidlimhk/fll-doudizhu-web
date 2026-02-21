@@ -128,19 +128,8 @@ async function performHealthCheck() {
     if (result.ok) {
       AppState.connectionStatus = result.latencyMs > 3000 ? 'slow' : 'normal';
       AppState.isOnline = true;
-      // Auto-sync pending (matching APK attemptAutoSync)
-      const pending = API.getPendingSubmissions();
-      if (pending.length > 0) {
-        const syncResult = await API.syncPendingSubmissions();
-        updatePendingBadge();
-        if (syncResult.synced > 0) {
-          AppState.refreshToken++;
-          showToast(t('toast_sync_success').replace('{count}', syncResult.synced), 'success');
-          // Re-render current tab to reflect synced data
-          AppState._tabRenderedToken = {};
-          renderTab(AppState.currentTab);
-        }
-      }
+      // Auto-sync pending with global lock to prevent duplicates
+      await syncPendingWithLock();
       // Update server status UI if on settings page
       updateServerStatusUI();
     } else {
@@ -390,6 +379,11 @@ async function transitionToAuthorized() {
   // Start server status auto-test countdown (30s cycle)
   runServerTest(); // Initial test immediately
   startServerCountdown();
+  // Auto-play BGM if enabled
+  if (AppState.settings.bgm) {
+    initAudio();
+    _bgmAudio.play().catch(() => {});
+  }
   // Fade out the auth gate
   const gate = document.getElementById('auth-gate');
   if (gate) {
@@ -997,7 +991,7 @@ function renderPendingSyncPanel(mode, pending) {
       const time = formatPendingTime(item.timestamp);
       const scoreColor = item.landlordScore > 0 ? 'var(--success)' : item.landlordScore < 0 ? 'var(--error)' : 'var(--foreground)';
       const scorePrefix = item.landlordScore > 0 ? '+' : '';
-      html += `<div class="sync-panel-item" oncontextmenu="event.preventDefault();showPendingActions('${item.id}')" onclick="showPendingActions('${item.id}')">`;
+      html += `<div class="sync-panel-item">`;
       html += `<span class="sync-item-time">${time}</span>`;
       html += `<span class="sync-item-landlord">\u{1F3A9} ${item.landlord}</span>`;
       html += `<span class="sync-item-score" style="color:${scoreColor}">${scorePrefix}${item.landlordScore}</span>`;
@@ -1005,8 +999,7 @@ function renderPendingSyncPanel(mode, pending) {
       html += `</div>`;
     });
 
-    // Hint
-    html += `<div style="color:var(--muted);font-size:calc(10px * var(--font-scale));text-align:center;margin-top:6px;opacity:0.8">\u{1F5B1}\uFE0F ${t('pending_action_edit')}/${t('pending_action_delete')}</div>`;
+
 
     // Force clear
     html += `<button class="sync-panel-force-clear" onclick="event.stopPropagation();forceClearPending()">`;
@@ -1068,6 +1061,28 @@ async function handleSyncPending() {
 
 // Legacy alias
 async function syncPending() { handleSyncPending(); }
+
+// Global sync with lock to prevent duplicate sync calls from concurrent triggers
+async function syncPendingWithLock() {
+  if (_isSyncing) return;
+  const pending = API.getPendingSubmissions();
+  if (pending.length === 0) return;
+  _isSyncing = true;
+  try {
+    const syncResult = await API.syncPendingSubmissions();
+    updatePendingBadge();
+    if (syncResult.synced > 0) {
+      AppState.refreshToken++;
+      showToast(t('toast_sync_success').replace('{count}', syncResult.synced), 'success');
+      AppState._tabRenderedToken = {};
+      renderTab(AppState.currentTab);
+    }
+  } catch (err) {
+    console.warn('[Sync] Auto-sync failed:', err);
+  } finally {
+    _isSyncing = false;
+  }
+}
 
 function showPendingActions(itemId) {
   const pending = API.getPendingSubmissions();
@@ -1828,7 +1843,8 @@ function renderSettingsPage(container) {
     </div>
   </div>`;
 
-  // Server Status (no countdown, spinner on button when testing)
+  // Server Status (countdown when idle, spinner on button when testing)
+  const countdownDisplay = _serverTesting ? '' : `<span id="server-countdown" style="color:var(--muted);font-size:calc(12px * var(--font-scale))">${_serverCountdown}s</span>`;
   html += `<div class="settings-section">
     <div class="settings-section-title">${t('settings_server_status')}</div>
     <div class="settings-card">
@@ -1838,6 +1854,7 @@ function renderSettingsPage(container) {
           <span id="server-status-text" style="font-weight:600;color:var(--${AppState.connectionStatus === 'normal' ? 'success' : AppState.connectionStatus === 'slow' ? 'warning' : AppState.connectionStatus === 'failed' ? 'error' : 'muted'})">${getServerStatusText()}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
+          ${countdownDisplay}
           <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" ${_serverTesting ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>${_serverTesting ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>' : t('settings_server_test_button')}</button>
         </div>
       </div>
@@ -2010,11 +2027,17 @@ let _serverCountdown = 30;
 let _serverTesting = false;
 let _serverCountdownTimer = null;
 
+// Global sync lock to prevent duplicate sync
+let _isSyncing = false;
+
 function startServerCountdown() {
   _serverCountdown = 30;
   if (_serverCountdownTimer) clearInterval(_serverCountdownTimer);
   _serverCountdownTimer = setInterval(() => {
     _serverCountdown--;
+    // Update countdown display if on settings page
+    const countdownEl = document.getElementById('server-countdown');
+    if (countdownEl) countdownEl.textContent = _serverCountdown + 's';
     if (_serverCountdown <= 0) {
       clearInterval(_serverCountdownTimer);
       _serverCountdownTimer = null;
@@ -2035,19 +2058,9 @@ async function runServerTest() {
   updateServerStatusUI();
   startServerCountdown();
 
-  // Auto-sync pending records after successful server test (matching APK)
+  // Auto-sync pending records after successful server test with lock
   if (result.ok) {
-    const pending = API.getPendingSubmissions();
-    if (pending.length > 0) {
-      const syncResult = await API.syncPendingSubmissions();
-      updatePendingBadge();
-      if (syncResult.synced > 0) {
-        AppState.refreshToken++;
-        showToast(t('toast_sync_success').replace('{count}', syncResult.synced), 'success');
-        AppState._tabRenderedToken = {};
-        renderTab(AppState.currentTab);
-      }
-    }
+    await syncPendingWithLock();
   }
 }
 
@@ -2063,6 +2076,7 @@ function updateServerStatusUI() {
   const statusText = document.getElementById('server-status-text');
   const statusDot = document.getElementById('server-status-dot');
   const testBtn = document.getElementById('server-test-btn');
+  const countdownEl = document.getElementById('server-countdown');
 
   const statusColor = AppState.connectionStatus === 'normal' ? 'var(--success)'
     : AppState.connectionStatus === 'slow' ? 'var(--warning)'
@@ -2081,6 +2095,10 @@ function updateServerStatusUI() {
     testBtn.innerHTML = _serverTesting
       ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>'
       : t('settings_server_test_button');
+  }
+  // Show/hide countdown based on testing state
+  if (countdownEl) {
+    countdownEl.style.display = _serverTesting ? 'none' : '';
   }
 }
 
