@@ -130,8 +130,8 @@ async function preloadAllData() {
   const hasCache = API.hasFullCache();
 
   if (hasCache) {
-    // Incremental load: only fetch latest round data
-    console.log('[Preload] Full cache exists, loading only latest round...');
+    // Incremental load: only fetch latest round stats + first page of history
+    console.log('[Preload] Cache exists, loading latest round only...');
     try {
       const [historyPage, statsRound] = await Promise.all([
         API.fetchHistoryPage(0, 200).catch(() => null),
@@ -147,32 +147,29 @@ async function preloadAllData() {
       console.warn('[Preload] Incremental load failed:', err);
     }
   } else {
-    // Full load: fetch everything and cache aggressively
-    console.log('[Preload] No cache, performing full data load...');
+    // Full load: preload all stats ranges + first page of history
+    // History uses lazy loading (200 per page), so we don't preload all 8000+ games
+    console.log('[Preload] No cache, performing full data preload...');
     try {
       const STATS_RANGES_TO_CACHE = ['本回合', '所有局数', '最近100局', '最近500局', '最近1000局', '最近参与的1000局'];
       const statsPromises = STATS_RANGES_TO_CACHE.map(r => API.fetchStats(r).catch(() => null));
-      const historyPromise = API.fetchHistoryPage(0, 500).catch(() => null);
+      const historyPromise = API.fetchHistoryPage(0, 200).catch(() => null);
 
       const [historyPage, ...allStats] = await Promise.all([historyPromise, ...statsPromises]);
 
-      if (historyPage) {
-        window._preloadedHistory = historyPage;
-        API.cacheFullHistory(historyPage.data, historyPage.players, historyPage.total);
-      }
+      if (historyPage) window._preloadedHistory = historyPage;
 
       STATS_RANGES_TO_CACHE.forEach((range, idx) => {
         if (allStats[idx]) {
-          // Already cached by API.fetchStats internally
           if (range === '所有局数') window._preloadedStatsAll = allStats[idx];
           if (range === '本回合') window._preloadedStatsRound = allStats[idx];
         }
       });
 
       API.markFullCacheComplete();
-      console.log('[Preload] Full data load + cache complete');
+      console.log('[Preload] Full data preload + cache complete');
     } catch (err) {
-      console.warn('[Preload] Full data load failed:', err);
+      console.warn('[Preload] Full data preload failed:', err);
     }
   }
 }
@@ -247,7 +244,8 @@ if (!AppState._tabRenderedToken) AppState._tabRenderedToken = {};
 const TAB_ORDER = ['score', 'history', 'stats', 'settings'];
 
 function switchTab(tab, direction) {
-  playSfx('click');
+  // Only play click SFX when switching via tab bar tap, not swipe
+  if (!direction) playSfx('click');
   const prevTab = AppState.currentTab;
   AppState.currentTab = tab;
   // Update tab bar active state
@@ -663,9 +661,10 @@ function renderScorePage(container) {
   }
 
   html += `<div class="round-section">
-    <h2 class="round-title">${t('score_latest_round')}</h2>
+    <h2 class="round-title" style="margin-top:16px">${t('score_latest_round')}</h2>
     <div id="round-summary-content"><div class="loading-spinner"><div class="spinner"></div></div></div>
-    <div id="round-trend-chart" style="margin-top:16px;margin-left:-8px;margin-right:-8px"></div>
+    <h2 class="round-title" style="margin-top:20px">${t('round_trend_title')}</h2>
+    <div id="round-trend-chart" style="margin-top:8px;margin-left:-8px;margin-right:-8px"></div>
   </div>`;
 
   container.innerHTML = html;
@@ -685,7 +684,7 @@ async function loadRoundSummary() {
   try {
     const [statsData, historyPage] = await Promise.all([
       API.fetchStats('本回合'),
-      API.fetchHistoryPage(0, 500),
+      API.fetchHistoryPage(0, 200),
     ]);
 
     const pending = API.getPendingSubmissions();
@@ -744,7 +743,7 @@ async function loadRoundSummary() {
           }
         });
         const filteredPlayers = historyPage.players.filter(p => participatingPlayers.has(p));
-        renderTrendChart(chartEl, roundGames, filteredPlayers.length > 0 ? filteredPlayers : historyPage.players, t('round_trend_title'));
+        renderTrendChart(chartEl, roundGames, filteredPlayers.length > 0 ? filteredPlayers : historyPage.players, null);
       }
     }
   } catch {
@@ -1293,10 +1292,8 @@ function setupPullToRefresh(container) {
       if (indicator) {
         indicator.style.height = '40px';
       }
-      // Reset expanded rounds so latest round auto-expands again
-      AppState.expandedRounds.clear();
-      AppState._historyFirstRender = true;
-      loadHistory(true).then(() => {
+      // Full data refresh: clear caches, re-download everything
+      handleRefreshAllData().then(() => {
         if (indicator) indicator.classList.add('hidden');
       });
     } else {
@@ -1319,22 +1316,8 @@ async function loadHistory(reset = false) {
   if (footerEl) footerEl.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><span style="color:var(--muted);font-size:14px;margin-left:8px">${t('common_loading')}</span></div>`;
 
   try {
-    let result;
     const batchSize = h.offset === 0 ? 200 : 100;
-
-    // For pages beyond the first, try cached full history
-    if (h.offset > 0 && API.hasFullCache()) {
-      const cached = API.getCachedFullHistory();
-      if (cached && cached.data && h.offset < cached.data.length) {
-        const slice = cached.data.slice(h.offset, h.offset + batchSize);
-        result = { data: slice, players: cached.players, total: cached.total, hasMore: h.offset + slice.length < cached.data.length };
-        console.log('[History] Using cached data for offset:', h.offset);
-      } else {
-        result = await API.fetchHistoryPage(h.offset, batchSize);
-      }
-    } else {
-      result = await API.fetchHistoryPage(h.offset, batchSize);
-    }
+    const result = await API.fetchHistoryPage(h.offset, batchSize);
 
     let games = result.data;
 
@@ -1728,31 +1711,24 @@ async function loadStatsData() {
   try {
     const limit = st.range === '所有局数' ? 10000 : st.range === '最近1000局' || st.range === '最近参与的1000局' ? 1000 : st.range === '最近500局' ? 500 : st.range === '最近100局' ? 100 : 500;
 
-    // Use cached stats for non-round ranges when full cache exists
+    // Use cached stats for non-round ranges when available
     let statsData, historyPage;
     const hasCache = API.hasFullCache();
     const isRoundRange = st.range === '本回合';
 
     if (hasCache && !isRoundRange) {
-      // Try cached stats first, fall back to API
       const cachedStats = API.getCachedStats(st.range);
-      const cachedHistory = API.getCachedFullHistory();
-      if (cachedStats && cachedHistory) {
+      if (cachedStats) {
         statsData = cachedStats;
-        historyPage = cachedHistory;
-        console.log('[Stats] Using cached data for range:', st.range);
+        console.log('[Stats] Using cached stats for range:', st.range);
       } else {
-        [statsData, historyPage] = await Promise.all([
-          API.fetchStats(st.range),
-          API.fetchHistoryPage(0, limit),
-        ]);
+        statsData = await API.fetchStats(st.range);
       }
     } else {
-      [statsData, historyPage] = await Promise.all([
-        API.fetchStats(st.range),
-        API.fetchHistoryPage(0, limit),
-      ]);
+      statsData = await API.fetchStats(st.range);
     }
+    // Always fetch history from API for trend charts
+    historyPage = await API.fetchHistoryPage(0, limit);
 
     const pending = API.getPendingSubmissions();
     st.data = overlayPendingOnStats(statsData, pending);
@@ -2009,15 +1985,12 @@ function renderSettingsPage(container) {
         <span class="settings-row-label">${t('settings_login_validity')}</span>
         <span class="settings-row-value" id="login-validity-text">${getLoginValidityText(authData.verifiedAt)}</span>
       </div>` : ''}
-      <div class="settings-row" style="padding:0;border-top:1px solid var(--border)">
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:12px 0;cursor:pointer;border-right:1px solid var(--border)" onclick="playSfx('click');handleRefreshAllData()">
-          <span class="material-icons" style="font-size:18px;color:var(--primary)">refresh</span>
-          <span style="color:var(--primary);font-size:calc(14px * var(--font-scale));font-weight:500">${t('settings_refresh_data')}</span>
-        </div>
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:12px 0;cursor:pointer" onclick="playSfx('click');handleLogout()">
-          <span class="material-icons text-error" style="font-size:18px">logout</span>
-          <span class="text-error" style="font-size:calc(14px * var(--font-scale));font-weight:500">${t('auth_relogin_settings')}</span>
-        </div>
+      <div class="settings-row" style="cursor:pointer" onclick="playSfx('click');handleLogout()">
+        <span class="settings-row-label text-error" style="display:flex;align-items:center;gap:4px">
+          <span class="material-icons" style="font-size:18px">logout</span>
+          ${t('auth_relogin_settings')}
+        </span>
+        <span class="material-icons text-muted" style="font-size:20px">chevron_right</span>
       </div>
     </div>
   </div>`;
@@ -2266,7 +2239,6 @@ function forceClearPending() {
 }
 
 async function handleRefreshAllData() {
-  showToast(t('common_loading'), 'info', 2000);
   // Clear all caches
   API.clearFullCache();
   // Clear preloaded data
@@ -2277,12 +2249,14 @@ async function handleRefreshAllData() {
   AppState.history.games = [];
   AppState.history.offset = 0;
   AppState.history.hasMore = true;
-  // Perform full data load
+  // Reset expanded rounds
+  AppState.expandedRounds.clear();
+  AppState._historyFirstRender = true;
+  // Perform full data load (forces no-cache path)
   await preloadAllData();
-  // Re-render current tab
+  // Re-render all tabs
   AppState._tabRenderedToken = {};
   renderCurrentTab();
-  showToast(t('settings_refresh_data_done') || '\u6578\u64DA\u5DF2\u5237\u65B0', 'success', 2000);
 }
 
 function handleLogout() {

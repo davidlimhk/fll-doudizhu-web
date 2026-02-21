@@ -318,7 +318,7 @@ const API = {
         players: data.players || [],
         data: enrichedData,
         total: total,
-        hasMore: data.hasMore === true,
+        hasMore: data.hasMore === true || (offset + enrichedData.length < total),
       };
 
       // Cache first page for offline
@@ -420,7 +420,7 @@ const API = {
 
   clearFullCache() {
     localStorage.removeItem(STORAGE_KEYS.FULL_CACHE_TIME);
-    localStorage.removeItem(STORAGE_KEYS.HISTORY_FULL_CACHE);
+    localStorage.removeItem(STORAGE_KEYS.HISTORY_FULL_CACHE); // legacy cleanup
     // Clear all stats caches
     const ranges = ['\u672c\u56de\u5408', '\u6240\u6709\u5c40\u6570', '\u6700\u8fd1100\u5c40', '\u6700\u8fd1500\u5c40', '\u6700\u8fd11000\u5c40', '\u6700\u8fd1\u53c2\u4e0e\u76841000\u5c40'];
     ranges.forEach(r => localStorage.removeItem(`${STORAGE_KEYS.STATS_CACHE}_${r}`));
@@ -432,22 +432,12 @@ const API = {
     console.log('[Cache] Full cache marked complete');
   },
 
-  // Cache full history data (all pages concatenated)
+  // Cache full history data (kept for backward compat, but no longer used for lazy loading)
   cacheFullHistory(allGames, players, total) {
-    try {
-      localStorage.setItem(STORAGE_KEYS.HISTORY_FULL_CACHE, JSON.stringify({
-        players, data: allGames, total,
-      }));
-    } catch (e) {
-      console.warn('[Cache] Failed to cache full history (storage full?):', e);
-    }
+    // No-op: history now uses lazy loading from API
   },
 
   getCachedFullHistory() {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEYS.HISTORY_FULL_CACHE);
-      if (cached) return JSON.parse(cached);
-    } catch {}
     return null;
   },
 
