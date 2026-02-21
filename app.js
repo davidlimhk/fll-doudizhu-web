@@ -1254,7 +1254,7 @@ function renderStatsContent(contentEl) {
 
   if (st.historyGames.length > 1) {
     html += `<div class="chart-title">${t('stats_trend_title')}</div>`;
-    html += '<div id="stats-trend-chart" class="chart-container"></div>';
+    html += '<div id="stats-trend-chart" class="chart-container" style="margin-left:-16px;margin-right:-16px"></div>';
   }
 
   if (st.historyGames.length > 0) {
@@ -1485,9 +1485,11 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   if (!games || games.length < 2) return;
 
   const players = selectedPlayers || allPlayers;
-  const width = Math.max(container.clientWidth || 360, container.parentElement ? container.parentElement.clientWidth - 8 : 360);
+  // Use full available width from container or parent, with minimal margins
+  const parentW = container.parentElement ? container.parentElement.clientWidth : 0;
+  const width = Math.max(container.clientWidth || 360, parentW || 360);
   const height = 220;
-  const padding = { top: 20, right: 16, bottom: 36, left: 50 };
+  const padding = { top: 20, right: 20, bottom: 36, left: 40 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
 
@@ -1595,9 +1597,10 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
   if (!games || games.length === 0) return;
 
   const players = selectedPlayers || allPlayers;
-  const size = Math.min(container.clientWidth || 360, 400);
+  // Enlarge radar chart - use more of the available width
+  const size = Math.min(container.clientWidth || 360, 500);
   const cx = size / 2, cy = size / 2;
-  const radius = size * 0.35;
+  const radius = size * 0.38;
 
   const allStats = {};
   allPlayers.forEach(p => {
@@ -1651,18 +1654,18 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
       const angle = startAngle + angleStep * i;
       points += `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)} `;
     }
-    svg += `<polygon points="${points}" fill="none" stroke="var(--border)" stroke-width="0.5"/>`;
+    svg += `<polygon points="${points}" fill="none" stroke="var(--border)" stroke-width="1"/>`;
   }
 
   for (let i = 0; i < 6; i++) {
     const angle = startAngle + angleStep * i;
     const x = cx + radius * Math.cos(angle);
     const y = cy + radius * Math.sin(angle);
-    svg += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>`;
-    const lx = cx + (radius + 18) * Math.cos(angle);
-    const ly = cy + (radius + 18) * Math.sin(angle);
+    svg += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    const lx = cx + (radius + 22) * Math.cos(angle);
+    const ly = cy + (radius + 22) * Math.sin(angle);
     const anchor = Math.abs(Math.cos(angle)) < 0.1 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end';
-    svg += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" text-anchor="${anchor}" fill="var(--muted)" font-size="10">${dimLabels[i]}</text>`;
+    svg += `<text x="${lx.toFixed(1)}" y="${(ly + 5).toFixed(1)}" text-anchor="${anchor}" fill="var(--fg)" font-size="13" font-weight="600">${dimLabels[i]}</text>`;
   }
 
   const colors = ['#0a7ea4', '#EF4444', '#22C55E', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
@@ -1677,25 +1680,25 @@ function renderRadarChart(container, games, allPlayers, selectedPlayers) {
       const angle = startAngle + angleStep * i;
       points += `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)} `;
     });
-    svg += `<polygon points="${points}" fill="${color}20" stroke="${color}" stroke-width="2"/>`;
+    svg += `<polygon points="${points}" fill="${color}25" stroke="${color}" stroke-width="2.5"/>`;
     dims.forEach((d, i) => {
       const val = stats[d] / maxVals[d];
       const r = radius * Math.max(val, 0.05);
       const angle = startAngle + angleStep * i;
-      svg += `<circle cx="${(cx + r * Math.cos(angle)).toFixed(1)}" cy="${(cy + r * Math.sin(angle)).toFixed(1)}" r="3" fill="${color}"/>`;
+      svg += `<circle cx="${(cx + r * Math.cos(angle)).toFixed(1)}" cy="${(cy + r * Math.sin(angle)).toFixed(1)}" r="4" fill="${color}"/>`;
     });
   });
 
   svg += '</svg>';
 
-  let legend = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;margin-bottom:4px">';
+  let legend = '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:8px 0;justify-content:center">';
   players.forEach((player, pIdx) => {
     const color = colors[pIdx % colors.length];
-    legend += `<span style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)">
-      <span style="width:8px;height:8px;background:${color};border-radius:50%"></span>${player}
+    legend += `<span style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);font-weight:500">
+      <span style="width:10px;height:10px;background:${color};border-radius:50%"></span>${player}
     </span>`;
   });
   legend += '</div>';
 
-  container.innerHTML = legend + svg;
+  container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center">' + svg + legend + '</div>';
 }

@@ -776,7 +776,7 @@ html, body {
 
 .chart-container canvas { display: block; }
 
-.radar-section { margin-top: 24px; }
+.radar-section { margin-top: 24px; display: flex; flex-direction: column; align-items: center; }
 
 /* Player Picker Modal (Stats) */
 .player-picker-content {
