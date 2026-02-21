@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/icon.png">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=9">
 </head>
 <body>
   <div id="app">
@@ -22,7 +22,12 @@
     <div id="undo-banner" class="undo-banner hidden"></div>
 
     <!-- Main Content Area -->
-    <div id="page-content" class="page-content"></div>
+    <div id="page-content" class="page-content">
+      <div id="page-score" class="page-panel"></div>
+      <div id="page-history" class="page-panel hidden"></div>
+      <div id="page-stats" class="page-panel hidden"></div>
+      <div id="page-settings" class="page-panel hidden"></div>
+    </div>
 
     <!-- Tab Bar -->
     <nav id="tab-bar" class="tab-bar">
@@ -86,9 +91,9 @@
     </div>
   </div>
 
-  <script src="/i18n.js?v=7"></script>
-  <script src="/api.js?v=7"></script>
-  <script src="/app.js?v=7"></script>
+  <script src="/i18n.js?v=9"></script>
+  <script src="/api.js?v=9"></script>
+  <script src="/app.js?v=9"></script>
   <script>
     // Fallback: ensure onReady runs even if DOMContentLoaded already fired
     setTimeout(function() {

@@ -55,8 +55,8 @@ async function onReady() {
     showLoginScreen();
   }
 
-  window.addEventListener('online', () => { AppState.isOnline = true; renderCurrentTab(); });
-  window.addEventListener('offline', () => { AppState.isOnline = false; renderCurrentTab(); });
+  window.addEventListener('online', () => { AppState.isOnline = true; delete AppState._tabRenderedToken[AppState.currentTab]; renderTab(AppState.currentTab); });
+  window.addEventListener('offline', () => { AppState.isOnline = false; delete AppState._tabRenderedToken[AppState.currentTab]; renderTab(AppState.currentTab); });
 
   // Health check every 30s
   setInterval(performHealthCheck, 30000);
@@ -131,6 +131,8 @@ function saveSetting(key, value) {
   if (key === 'fontSize') applyFontScale();
   if (key === 'language') {
     updateTabLabels();
+    // Language change invalidates all tab caches
+    AppState._tabRenderedToken = {};
     renderCurrentTab();
   }
 }
@@ -158,24 +160,41 @@ function updateTabLabels() {
 }
 
 // ===== Tab Navigation =====
+// Track last rendered refreshToken per tab to avoid unnecessary re-renders
+if (!AppState._tabRenderedToken) AppState._tabRenderedToken = {};
+
 function switchTab(tab) {
   AppState.currentTab = tab;
+  // Update tab bar active state
   document.querySelectorAll('.tab-item').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === tab);
   });
-  renderCurrentTab();
+  // Show/hide page panels
+  ['score', 'history', 'stats', 'settings'].forEach(t => {
+    const panel = document.getElementById('page-' + t);
+    if (panel) panel.classList.toggle('hidden', t !== tab);
+  });
+  // Only render if data changed or first visit
+  const lastToken = AppState._tabRenderedToken[tab];
+  if (tab === 'settings' || lastToken === undefined || lastToken !== AppState.refreshToken) {
+    renderTab(tab);
+  }
+}
+
+function renderTab(tab) {
+  const container = document.getElementById('page-' + tab);
+  if (!container) return;
+  switch (tab) {
+    case 'score': renderScorePage(container); break;
+    case 'history': renderHistoryPage(container); break;
+    case 'stats': renderStatsPage(container); break;
+    case 'settings': renderSettingsPage(container); break;
+  }
+  AppState._tabRenderedToken[tab] = AppState.refreshToken;
 }
 
 function renderCurrentTab() {
-  const content = document.getElementById('page-content');
-  if (!content) return;
-  content.scrollTop = 0;
-  switch (AppState.currentTab) {
-    case 'score': renderScorePage(content); break;
-    case 'history': renderHistoryPage(content); break;
-    case 'stats': renderStatsPage(content); break;
-    case 'settings': renderSettingsPage(content); break;
-  }
+  renderTab(AppState.currentTab);
 }
 
 // ===== Toast =====
@@ -456,7 +475,7 @@ function buildScoreFormHTML(s, scoreClass, farmerScore) {
 // Update only the form area without re-rendering the entire page or re-fetching data
 function updateScoreFormUI() {
   const formArea = document.getElementById('score-form-area');
-  if (!formArea) { renderCurrentTab(); return; }
+  if (!formArea) { delete AppState._tabRenderedToken['score']; renderTab('score'); return; }
 
   const s = AppState.score;
   const farmerScore = s.selectedScore !== null ? -s.selectedScore / 2 : null;
@@ -573,8 +592,9 @@ async function handleSubmit() {
     showToast(err.message || t('toast_submit_failed'), 'error');
   } finally {
     s._submitting = false;
-    // Full re-render only once after submit completes, to refresh round summary
-    renderCurrentTab();
+    // Force re-render score page to refresh round summary
+    delete AppState._tabRenderedToken['score'];
+    renderTab('score');
   }
 }
 
@@ -664,7 +684,9 @@ async function handleUndo() {
     showToast(`${t('toast_undo_success')} (${info.landlord} ${scoreStr})`, 'success');
     AppState.refreshToken++;
     hideUndoBanner();
-    renderCurrentTab();
+    // Invalidate all tab caches since data changed
+    AppState._tabRenderedToken = {};
+    renderTab(AppState.currentTab);
   } catch {
     showToast(t('toast_undo_failed'), 'error');
   }
@@ -680,7 +702,9 @@ async function syncPending() {
     } else {
       showToast(t('toast_sync_success').replace('{count}', result.synced), 'success');
     }
-    renderCurrentTab();
+    // Invalidate all tab caches since data changed
+    AppState._tabRenderedToken = {};
+    renderTab(AppState.currentTab);
   } catch {
     showToast(t('settings_sync_error'), 'error');
   }
@@ -711,11 +735,65 @@ function renderHistoryPage(container) {
     </div>`;
   }
 
+  html += '<div id="history-pull-indicator" class="pull-indicator hidden"><div class="spinner" style="width:20px;height:20px;border-width:2px"></div></div>';
   html += '<div id="history-list"></div>';
   html += '<div id="history-footer"></div>';
 
   container.innerHTML = html;
+  setupPullToRefresh(container);
   loadHistory(true);
+}
+
+// ===== Pull-to-refresh for history page =====
+function setupPullToRefresh(container) {
+  // Prevent duplicate event listeners on re-render
+  if (container._pullToRefreshSetup) return;
+  container._pullToRefreshSetup = true;
+
+  let startY = 0;
+  let pulling = false;
+  let triggered = false;
+  const threshold = 80;
+
+  container.addEventListener('touchstart', (e) => {
+    if (container.scrollTop <= 0) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+      triggered = false;
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchmove', (e) => {
+    if (!pulling) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy > 10 && container.scrollTop <= 0) {
+      const indicator = document.getElementById('history-pull-indicator');
+      if (indicator) {
+        indicator.classList.remove('hidden');
+        indicator.style.height = Math.min(dy * 0.5, 50) + 'px';
+      }
+      if (dy > threshold) triggered = true;
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchend', () => {
+    const indicator = document.getElementById('history-pull-indicator');
+    if (pulling && triggered) {
+      if (indicator) {
+        indicator.style.height = '40px';
+      }
+      // Reset expanded rounds so latest round auto-expands again
+      AppState.expandedRounds.clear();
+      AppState._historyFirstRender = true;
+      loadHistory(true).then(() => {
+        if (indicator) indicator.classList.add('hidden');
+      });
+    } else {
+      if (indicator) indicator.classList.add('hidden');
+    }
+    pulling = false;
+    triggered = false;
+  }, { passive: true });
 }
 
 async function loadHistory(reset = false) {
@@ -852,7 +930,7 @@ function groupIntoRounds(records, hideLastRound) {
       gameCount: currentRound.length,
     });
   }
-  if (hideLastRound && result.length > 1) result.pop();
+  // Removed hideLastRound logic - always show all rounds
   // Mark first round as current if recent
   if (result.length > 0) {
     const firstRoundTime = parseTimestamp(result[0].games[0].timestamp);
@@ -911,8 +989,8 @@ function renderHistoryList() {
     return;
   }
 
-  // Group into rounds
-  const rounds = groupIntoRounds(games, h.hasMore);
+  // Group into rounds (never hide last round - we want to show all loaded data)
+  const rounds = groupIntoRounds(games, false);
 
   // Auto-expand latest round on first render
   if (AppState._historyFirstRender !== false && rounds.length > 0) {
@@ -965,10 +1043,10 @@ function renderHistoryList() {
   if (footerEl) {
     if (h.hasMore) {
       footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory(false)">${t('history_load_more')}</div>`;
-      const content = document.getElementById('page-content');
-      if (content) {
-        content.onscroll = () => {
-          if (!h.loading && h.hasMore && content.scrollTop + content.clientHeight >= content.scrollHeight - 150) {
+      const historyPanel = document.getElementById('page-history');
+      if (historyPanel) {
+        historyPanel.onscroll = () => {
+          if (!h.loading && h.hasMore && historyPanel.scrollTop + historyPanel.clientHeight >= historyPanel.scrollHeight - 150) {
             loadHistory(false);
           }
         };
@@ -1203,7 +1281,9 @@ function renderStatsContent(contentEl) {
 
 function changeStatsRange(range) {
   AppState.stats.range = range;
-  renderCurrentTab();
+  // Force re-render stats page (refreshToken hasn't changed, but range did)
+  delete AppState._tabRenderedToken['stats'];
+  renderTab('stats');
 }
 
 function openStatsPlayerPicker() {
@@ -1391,7 +1471,7 @@ function forceClearPending() {
     API.clearPendingSubmissions();
     updatePendingBadge();
     showToast(t('sync_panel_cleared'), 'success');
-    renderCurrentTab();
+    renderTab('settings');
   }
 }
 

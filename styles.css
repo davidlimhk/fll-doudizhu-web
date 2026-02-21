@@ -58,14 +58,25 @@ html, body {
   }
 }
 
-/* ===== Page Content ===== */
-.page-content {
+/* ===== Page Panels ===== */
+.page-panel {
   flex: 1;
+  padding: 8px 16px 16px;
+  padding-top: calc(var(--safe-top) + 8px);
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 8px 16px 16px;
-  padding-top: calc(var(--safe-top) + 8px);
+}
+.page-panel.hidden {
+  display: none;
+}
+
+/* ===== Page Content ===== */
+.page-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* ===== Tab Bar ===== */
@@ -614,8 +625,10 @@ html, body {
 .game-row-player {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
   min-width: 0;
 }
 .game-row-player-name {
@@ -644,6 +657,15 @@ html, body {
 }
 
 .history-footer.clickable { cursor: pointer; }
+
+.pull-indicator {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  height: 0;
+  transition: height 0.2s;
+}
 
 /* ===== Stats Page ===== */
 .range-scroll {
