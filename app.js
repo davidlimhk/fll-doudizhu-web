@@ -1911,7 +1911,7 @@ function renderSettingsPage(container) {
         <span class="settings-row-value" id="script-version-text">${AppState.scriptVersion || t('common_loading')}</span>
       </div>
       <div class="settings-row">
-        <span class="settings-row-label" style="flex:1">${t('settings_about_desc_prefix')}<a id="sheet-url-link" href="#" target="_blank" style="color:var(--primary);text-decoration:underline">Google Sheets</a>${t('settings_about_desc_suffix')}</span>
+        <span class="settings-row-label" style="flex:1">${t('settings_about_desc_prefix')}<a id="sheet-url-link" href="#" target="_blank" style="color:var(--primary);text-decoration:underline">${AppState.settings.language === 'en' ? 'cloud' : '雲端'}</a>${t('settings_about_desc_suffix')}</span>
       </div>
     </div>
   </div>`;
