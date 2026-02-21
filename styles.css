@@ -1089,7 +1089,7 @@ html, body {
 .auth-gate {
   position: fixed;
   inset: 0;
-  background: #1A73E8;
+  background: #0a7ea4;
   z-index: 600;
   display: flex;
   flex-direction: column;
@@ -1106,7 +1106,7 @@ html, body {
 .auth-overlay {
   position: fixed;
   inset: 0;
-  background: #1A73E8;
+  background: #0a7ea4;
   z-index: 550;
   display: flex;
   flex-direction: column;
