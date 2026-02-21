@@ -927,6 +927,8 @@ async function handleSubmit() {
         const result = await API.submitGame(submitData.landlord, submitData.farmer1, submitData.farmer2, submitData.score);
         playSfx('success');
         showToast(t('toast_submit_success'), 'success');
+        // Invalidate stats cache so fresh data is fetched on next tab visit
+        API.clearFullCache();
         AppState.refreshToken++;
         startUndoTimer({ ...submitData, timestamp: result.timestamp });
       } catch (err) {
@@ -1033,6 +1035,8 @@ async function handleUndo() {
       updatePendingBadge();
     } else if (info.timestamp) {
       await API.deleteLastGame(info.timestamp);
+      // Invalidate stats cache since server data changed
+      API.clearFullCache();
     }
     const scoreStr = info.score > 0 ? `+${info.score}` : `${info.score}`;
     showToast(`${t('toast_undo_success')} (${info.landlord} ${scoreStr})`, 'success');
@@ -1148,6 +1152,9 @@ async function handleSyncPending() {
     AppState.refreshToken++;
     _pendingSyncing = false;
 
+    // Invalidate stats cache after sync so fresh data is fetched
+    if (result.synced > 0) API.clearFullCache();
+
     if (result.failed > 0) {
       showToast(`${t('settings_sync_result')}: ${result.failed} ${t('settings_sync_failed_suffix')}`, 'error');
     } else {
@@ -1177,6 +1184,8 @@ async function syncPendingWithLock() {
     const syncResult = await API.syncPendingSubmissions();
     updatePendingBadge();
     if (syncResult.synced > 0) {
+      // Invalidate stats cache after sync so fresh data is fetched
+      API.clearFullCache();
       AppState.refreshToken++;
       showToast(t('toast_sync_success').replace('{count}', syncResult.synced), 'success');
       AppState._tabRenderedToken = {};
