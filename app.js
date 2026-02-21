@@ -684,47 +684,66 @@ async function loadRoundSummary() {
     return;
   }
 
+  // Fetch stats and history independently - each has its own offline fallback
+  // fetchStats has internal catch that returns cached data or []
+  // fetchHistoryPage has internal catch for offset=0 that returns cached data
+  let statsData = [];
+  let historyPage = { data: [], players: [], total: 0, hasMore: false };
+
   try {
-    const [statsData, historyPage] = await Promise.all([
-      API.fetchStats('本回合'),
-      API.fetchHistoryPage(0, 200),
-    ]);
+    statsData = await API.fetchStats('本回合');
+  } catch {
+    // fetchStats already handles offline fallback internally, but just in case
+    statsData = API.getCachedStats('本回合') || [];
+  }
 
-    const pending = API.getPendingSubmissions();
-    const roundStats = overlayPendingOnStats(statsData.filter(s => s.gamesPlayed > 0), pending);
+  try {
+    historyPage = await API.fetchHistoryPage(0, 200);
+  } catch {
+    // fetchHistoryPage already handles offline fallback for offset=0, but just in case
+    const cached = API.getCachedHistory();
+    if (cached) historyPage = { ...cached, hasMore: false };
+  }
 
-    if (roundStats.length === 0) {
-      el.innerHTML = `<div class="empty-state">${t('score_no_round_data')}</div>`;
-      return;
-    }
+  const pending = API.getPendingSubmissions();
+  const roundStats = overlayPendingOnStats(
+    (Array.isArray(statsData) ? statsData : []).filter(s => s.gamesPlayed > 0),
+    pending
+  );
 
-    let tableHtml = `<div class="summary-table">
-      <div class="summary-header-row">
-        <span class="summary-cell summary-cell-name text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_player')}</span>
-        <span class="summary-cell summary-cell-num text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_total')}</span>
-        <span class="summary-cell summary-cell-num text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_avg')}</span>
-        <span class="summary-cell summary-cell-num text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_winrate')}</span>
-      </div>`;
+  if (roundStats.length === 0) {
+    el.innerHTML = `<div class="empty-state">${t('score_no_round_data')}</div>`;
+    return;
+  }
 
-    roundStats.forEach(stat => {
-      const scoreColor = stat.totalScore > 0 ? 'text-success' : stat.totalScore < 0 ? 'text-error' : '';
-      const scorePrefix = stat.totalScore > 0 ? '+' : '';
-      tableHtml += `<div class="summary-row">
-        <span class="summary-cell summary-cell-name">
-          <span>${stat.name}</span>
-          ${stat.hasPendingData ? '<span class="material-icons text-warning" style="font-size:11px">cloud_upload</span>' : ''}
-        </span>
-        <span class="summary-cell summary-cell-num ${scoreColor}" style="font-weight:700">${scorePrefix}${Math.round(stat.totalScore)}</span>
-        <span class="summary-cell summary-cell-num text-muted">${stat.avgScore.toFixed(1)}</span>
-        <span class="summary-cell summary-cell-num text-muted">${stat.winRate.toFixed(0)}%</span>
-      </div>`;
-    });
+  let tableHtml = `<div class="summary-table">
+    <div class="summary-header-row">
+      <span class="summary-cell summary-cell-name text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_player')}</span>
+      <span class="summary-cell summary-cell-num text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_total')}</span>
+      <span class="summary-cell summary-cell-num text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_avg')}</span>
+      <span class="summary-cell summary-cell-num text-muted" style="font-size:calc(13px * var(--font-scale))">${t('stats_header_winrate')}</span>
+    </div>`;
 
-    tableHtml += '</div>';
-    el.innerHTML = tableHtml;
+  roundStats.forEach(stat => {
+    const scoreColor = stat.totalScore > 0 ? 'text-success' : stat.totalScore < 0 ? 'text-error' : '';
+    const scorePrefix = stat.totalScore > 0 ? '+' : '';
+    tableHtml += `<div class="summary-row">
+      <span class="summary-cell summary-cell-name">
+        <span>${stat.name}</span>
+        ${stat.hasPendingData ? '<span class="material-icons text-warning" style="font-size:11px">cloud_upload</span>' : ''}
+      </span>
+      <span class="summary-cell summary-cell-num ${scoreColor}" style="font-weight:700">${scorePrefix}${Math.round(stat.totalScore)}</span>
+      <span class="summary-cell summary-cell-num text-muted">${stat.avgScore.toFixed(1)}</span>
+      <span class="summary-cell summary-cell-num text-muted">${stat.winRate.toFixed(0)}%</span>
+    </div>`;
+  });
 
-    // Round trend chart
-    if (historyPage.data.length >= 2 && chartEl) {
+  tableHtml += '</div>';
+  el.innerHTML = tableHtml;
+
+  // Round trend chart
+  try {
+    if (historyPage.data && historyPage.data.length >= 2 && chartEl) {
       const SIX_HOURS = 6 * 60 * 60 * 1000;
       let roundEndIdx = historyPage.data.length;
       for (let i = 1; i < historyPage.data.length; i++) {
@@ -734,7 +753,6 @@ async function loadRoundSummary() {
       }
       const roundGames = mergeWithPending(historyPage.data.slice(0, roundEndIdx), API.getPendingSubmissions());
       if (roundGames.length >= 2) {
-        // Only show players who participated in the latest round
         const participatingPlayers = new Set();
         roundGames.forEach(g => {
           if (g.scores) {
@@ -745,12 +763,12 @@ async function loadRoundSummary() {
             if (g.farmer2) participatingPlayers.add(g.farmer2);
           }
         });
-        const filteredPlayers = historyPage.players.filter(p => participatingPlayers.has(p));
-        renderTrendChart(chartEl, roundGames, filteredPlayers.length > 0 ? filteredPlayers : historyPage.players, null);
+        const filteredPlayers = (historyPage.players || []).filter(p => participatingPlayers.has(p));
+        renderTrendChart(chartEl, roundGames, filteredPlayers.length > 0 ? filteredPlayers : (historyPage.players || []), null);
       }
     }
-  } catch {
-    el.innerHTML = `<div class="empty-state">${t('score_no_round_data')}</div>`;
+  } catch (chartErr) {
+    console.warn('[Score] Trend chart render failed:', chartErr);
   }
 }
 
@@ -1334,7 +1352,7 @@ async function loadHistory(reset = false) {
 
     renderHistoryList();
   } catch {
-    if (footerEl) footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory(true)">${t('history_load_failed_retry')}</div>`;
+    if (footerEl) footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory()">${t('history_load_failed_retry')}</div>`;
   } finally {
     h.loading = false;
   }
@@ -1711,14 +1729,15 @@ async function loadStatsData() {
   if (!contentEl) return;
   st.loading = true;
 
+  const limit = st.range === '所有局数' ? 10000 : st.range === '最近1000局' || st.range === '最近参与的1000局' ? 1000 : st.range === '最近500局' ? 500 : st.range === '最近100局' ? 100 : 500;
+
+  // Fetch stats and history independently with offline fallback
+  let statsData = [];
+  let historyPage = { data: [], players: [], total: 0, hasMore: false };
+  const hasCache = API.hasFullCache();
+  const isRoundRange = st.range === '本回合';
+
   try {
-    const limit = st.range === '所有局数' ? 10000 : st.range === '最近1000局' || st.range === '最近参与的1000局' ? 1000 : st.range === '最近500局' ? 500 : st.range === '最近100局' ? 100 : 500;
-
-    // Use cached stats for non-round ranges when available
-    let statsData, historyPage;
-    const hasCache = API.hasFullCache();
-    const isRoundRange = st.range === '本回合';
-
     if (hasCache && !isRoundRange) {
       const cachedStats = API.getCachedStats(st.range);
       if (cachedStats) {
@@ -1730,30 +1749,40 @@ async function loadStatsData() {
     } else {
       statsData = await API.fetchStats(st.range);
     }
-    // Always fetch history from API for trend charts
+  } catch {
+    statsData = API.getCachedStats(st.range) || [];
+    console.log('[Stats] Using cached stats fallback for range:', st.range);
+  }
+
+  try {
     historyPage = await API.fetchHistoryPage(0, limit);
+  } catch {
+    const cached = API.getCachedHistory();
+    if (cached) historyPage = { ...cached, hasMore: false };
+    console.log('[Stats] Using cached history fallback');
+  }
 
-    const pending = API.getPendingSubmissions();
-    st.data = overlayPendingOnStats(statsData, pending);
+  const pending = API.getPendingSubmissions();
+  st.data = overlayPendingOnStats(Array.isArray(statsData) ? statsData : [], pending);
 
-    let historyGames = historyPage.data;
-    if (st.range === '本回合' && historyGames.length > 0) {
-      historyGames = filterCurrentRoundGames(historyGames);
-    }
-    st.historyGames = mergeWithPending(historyGames, pending);
+  let historyGames = historyPage.data || [];
+  if (st.range === '本回合' && historyGames.length > 0) {
+    historyGames = filterCurrentRoundGames(historyGames);
+  }
+  st.historyGames = mergeWithPending(historyGames, pending);
 
-    if (st.selectedPlayers.length === 0 && st.data.length > 0) {
-      const available = st.data.map(s => s.name);
-      const defaults = DEFAULT_SELECTED_PLAYERS.filter(p => available.includes(p));
-      st.selectedPlayers = defaults.length > 0 ? defaults : [st.data[0].name];
-    }
+  if (st.selectedPlayers.length === 0 && st.data.length > 0) {
+    const available = st.data.map(s => s.name);
+    const defaults = DEFAULT_SELECTED_PLAYERS.filter(p => available.includes(p));
+    st.selectedPlayers = defaults.length > 0 ? defaults : [st.data[0].name];
+  }
 
+  try {
     renderStatsContent(contentEl);
   } catch {
     contentEl.innerHTML = `<div class="empty-state">${t('stats_load_failed')}</div>`;
-  } finally {
-    st.loading = false;
   }
+  st.loading = false;
 }
 
 function renderStatsContent(contentEl) {
