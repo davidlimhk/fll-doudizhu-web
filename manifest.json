@@ -5,8 +5,8 @@
   "start_url": ".",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#3B5171",
-  "theme_color": "#3B5171",
+  "background_color": "#2c4c7f",
+  "theme_color": "#2c4c7f",
   "icons": [
     {
       "src": "avatar-nobg.png",

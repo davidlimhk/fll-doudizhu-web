@@ -854,7 +854,7 @@ html, body {
 
 /* Charts section */
 .charts-section { margin-top: 24px; }
-.chart-title { font-size: calc(15px * var(--font-scale)); font-weight: 600; margin-bottom: 4px; color: var(--fg); text-align: center; }
+.chart-title { font-size: calc(15px * var(--font-scale)); font-weight: 600; margin-bottom: 4px; color: var(--fg); text-align: left; }
 
 .player-selector-row {
   display: flex;
@@ -1084,12 +1084,14 @@ html, body {
 .status-dot.testing { background: var(--muted); animation: pulse 1s infinite; }
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes slide-in-left { from { transform: translateX(30%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes slide-in-right { from { transform: translateX(-30%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* ===== Auth Gate (Splash/Login/Checking/Denied) ===== */
 .auth-gate {
   position: fixed;
   inset: 0;
-  background: #3B5171;
+  background: #2c4c7f;
   z-index: 600;
   display: flex;
   flex-direction: column;
@@ -1106,7 +1108,7 @@ html, body {
 .auth-overlay {
   position: fixed;
   inset: 0;
-  background: #3B5171;
+  background: #2c4c7f;
   z-index: 550;
   display: flex;
   flex-direction: column;
@@ -1213,6 +1215,29 @@ html, body {
 .auth-email-input::placeholder {
   color: rgba(255,255,255,0.4);
 }
+
+.auth-google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 80%;
+  max-width: 320px;
+  padding: 12px 24px;
+  background: #ffffff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  margin: 0 auto;
+}
+.auth-google-btn:hover { background: #f7f8f8; box-shadow: 0 1px 3px rgba(0,0,0,0.16); }
+.auth-google-btn:active { background: #eee; }
+.auth-google-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .auth-btn-primary {
   display: flex;

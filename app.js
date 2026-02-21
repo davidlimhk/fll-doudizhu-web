@@ -119,6 +119,28 @@ async function initApp() {
   }
 
   renderCurrentTab();
+
+  // Preload data in background so other tabs load instantly
+  preloadAllData();
+}
+
+async function preloadAllData() {
+  if (!API.getAuthEmail()) return;
+  try {
+    // Preload history and stats in parallel
+    const [historyPage, statsAll, statsRound] = await Promise.all([
+      API.fetchHistoryPage(0, 500).catch(() => null),
+      API.fetchStats('全部').catch(() => null),
+      API.fetchStats('本回合').catch(() => null),
+    ]);
+    // Cache results for tabs to use
+    if (historyPage) window._preloadedHistory = historyPage;
+    if (statsAll) window._preloadedStatsAll = statsAll;
+    if (statsRound) window._preloadedStatsRound = statsRound;
+    console.log('[Preload] Background data loaded');
+  } catch (err) {
+    console.warn('[Preload] Background data load failed:', err);
+  }
 }
 
 async function performHealthCheck() {
@@ -174,7 +196,7 @@ function applyTheme() {
 }
 
 function applyFontScale() {
-  const scales = { small: 0.85, medium: 1, large: 1.15 };
+  const scales = { small: 0.85, medium: 1.15, large: 1.35 };
   document.documentElement.style.setProperty('--font-scale', scales[AppState.settings.fontSize] || 1);
 }
 
@@ -190,17 +212,28 @@ if (!AppState._tabRenderedToken) AppState._tabRenderedToken = {};
 
 const TAB_ORDER = ['score', 'history', 'stats', 'settings'];
 
-function switchTab(tab) {
+function switchTab(tab, direction) {
   playSfx('tap');
+  const prevTab = AppState.currentTab;
   AppState.currentTab = tab;
   // Update tab bar active state
   document.querySelectorAll('.tab-item').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === tab);
   });
-  // Show/hide page panels
+  // Show/hide page panels with slide transition
+  const prevIdx = TAB_ORDER.indexOf(prevTab);
+  const nextIdx = TAB_ORDER.indexOf(tab);
+  const slideDir = direction || (nextIdx > prevIdx ? 'left' : 'right');
   ['score', 'history', 'stats', 'settings'].forEach(t => {
     const panel = document.getElementById('page-' + t);
-    if (panel) panel.classList.toggle('hidden', t !== tab);
+    if (!panel) return;
+    if (t === tab) {
+      panel.classList.remove('hidden');
+      panel.style.animation = `slide-in-${slideDir} 0.25s ease-out`;
+    } else {
+      panel.classList.add('hidden');
+      panel.style.animation = '';
+    }
   });
   // Only render if data changed or first visit
   const lastToken = AppState._tabRenderedToken[tab];
@@ -229,10 +262,10 @@ function setupSwipeNavigation() {
       const currentIdx = TAB_ORDER.indexOf(AppState.currentTab);
       if (dx < 0 && currentIdx < TAB_ORDER.length - 1) {
         // Swipe left → next tab
-        switchTab(TAB_ORDER[currentIdx + 1]);
+        switchTab(TAB_ORDER[currentIdx + 1], 'left');
       } else if (dx > 0 && currentIdx > 0) {
         // Swipe right → previous tab
-        switchTab(TAB_ORDER[currentIdx - 1]);
+        switchTab(TAB_ORDER[currentIdx - 1], 'right');
       }
     }
   }, { passive: true });
@@ -299,9 +332,9 @@ function showAuthContent_Login() {
   const content = document.getElementById('auth-content');
   if (!content) return;
   content.innerHTML = `
-    <button class="auth-btn-primary" id="auth-google-btn" onclick="handleGoogleLogin()">
-      <span class="material-icons" style="font-size:22px">login</span>
-      <span>${t('auth_login_btn') || '登入'}</span>
+    <button class="auth-google-btn" id="auth-google-btn" onclick="handleGoogleLogin()">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      <span>${t('auth_google_signin')}</span>
     </button>
     <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
   `;
@@ -665,7 +698,19 @@ async function loadRoundSummary() {
       }
       const roundGames = mergeWithPending(historyPage.data.slice(0, roundEndIdx), API.getPendingSubmissions());
       if (roundGames.length >= 2) {
-        renderTrendChart(chartEl, roundGames, historyPage.players, t('round_trend_title'));
+        // Only show players who participated in the latest round
+        const participatingPlayers = new Set();
+        roundGames.forEach(g => {
+          if (g.scores) {
+            Object.entries(g.scores).forEach(([p, s]) => { if (s !== undefined && s !== 0) participatingPlayers.add(p); });
+          } else {
+            if (g.landlord) participatingPlayers.add(g.landlord);
+            if (g.farmer1) participatingPlayers.add(g.farmer1);
+            if (g.farmer2) participatingPlayers.add(g.farmer2);
+          }
+        });
+        const filteredPlayers = historyPage.players.filter(p => participatingPlayers.has(p));
+        renderTrendChart(chartEl, roundGames, filteredPlayers.length > 0 ? filteredPlayers : historyPage.players, t('round_trend_title'));
       }
     }
   } catch {
@@ -1861,7 +1906,7 @@ function renderSettingsPage(container) {
         </div>
         <div style="display:flex;align-items:center;gap:10px">
           ${countdownDisplay}
-          <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" ${_serverTesting ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>${_serverTesting ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>' : t('settings_server_test_button')}</button>
+          <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" style="min-width:60px;min-height:32px;display:inline-flex;align-items:center;justify-content:center${_serverTesting ? ';opacity:0.5;cursor:not-allowed' : ''}" ${_serverTesting ? 'disabled' : ''}>${_serverTesting ? '<span class="spinner" style="width:18px;height:18px;border-width:2.5px;display:inline-block"></span>' : t('settings_server_test_button')}</button>
         </div>
       </div>
     </div>
@@ -2108,8 +2153,13 @@ function updateServerStatusUI() {
     testBtn.style.opacity = _serverTesting ? '0.5' : '1';
     testBtn.style.cursor = _serverTesting ? 'not-allowed' : 'pointer';
     testBtn.innerHTML = _serverTesting
-      ? '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>'
+      ? '<span class="spinner" style="width:18px;height:18px;border-width:2.5px;display:inline-block"></span>'
       : t('settings_server_test_button');
+    testBtn.style.minWidth = '60px';
+    testBtn.style.minHeight = '32px';
+    testBtn.style.display = 'inline-flex';
+    testBtn.style.alignItems = 'center';
+    testBtn.style.justifyContent = 'center';
   }
   // Show/hide countdown based on testing state
   if (countdownEl) {
@@ -2453,8 +2503,8 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   });
   legend += '</div>';
 
-  // Title above chart, legend below chart (centered)
-  const chartTitle = title ? `<h2 class="round-title" style="text-align:left">${title}</h2>` : '';
+  // Title above chart, legend below chart
+  const chartTitle = title ? `<h2 class="round-title">${title}</h2>` : '';
   container.innerHTML = chartTitle + svg + legend;
 }
 
