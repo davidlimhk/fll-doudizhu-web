@@ -568,13 +568,18 @@ html, body {
   gap: 4px;
 }
 .round-chevron {
-  font-size: calc(20px * var(--font-scale));
+  font-size: 20px;
   color: var(--muted);
+  line-height: 1;
+  display: flex;
+  align-items: center;
 }
-.round-title {
+.round-header .round-title {
   font-size: calc(15px * var(--font-scale));
   font-weight: 600;
   color: var(--fg);
+  line-height: 1.2;
+  margin-bottom: 0;
 }
 .round-subtitle {
   font-size: calc(13px * var(--font-scale));

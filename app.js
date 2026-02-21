@@ -327,7 +327,7 @@ function renderScorePage(container) {
   html += `<div class="round-section">
     <h2 class="round-title">${t('score_latest_round')}</h2>
     <div id="round-summary-content"><div class="loading-spinner"><div class="spinner"></div></div></div>
-    <div id="round-trend-chart"></div>
+    <div id="round-trend-chart" style="margin-top:16px;margin-left:-8px;margin-right:-8px"></div>
   </div>`;
 
   container.innerHTML = html;
@@ -612,7 +612,7 @@ function renderUndoBanner() {
   banner.innerHTML = `
     <div class="undo-progress" style="width:${pct}%"></div>
     <div class="undo-content" onclick="handleUndo()">
-      <span class="material-icons">undo</span>
+      <span class="material-icons undo-icon">undo</span>
       <span class="undo-text">${t('score_undo')} (${info.landlord} ${scoreStr})</span>
       <span class="undo-countdown">${AppState.undoCountdown}s</span>
     </div>`;
@@ -643,6 +643,15 @@ function clearUndoTimer() {
 async function handleUndo() {
   const info = AppState.undoInfo;
   if (!info) return;
+
+  // Show "撤銷中..." on the banner
+  const banner = document.getElementById('undo-banner');
+  if (banner) {
+    const textEl = banner.querySelector('.undo-text');
+    const countdownEl = banner.querySelector('.undo-countdown');
+    if (textEl) textEl.textContent = t('score_undoing') || '撤銷中...';
+    if (countdownEl) countdownEl.style.display = 'none';
+  }
 
   try {
     if (info.isOffline && info.pendingId) {
@@ -718,7 +727,7 @@ async function loadHistory(reset = false) {
 
   h.loading = true;
   const footerEl = document.getElementById('history-footer');
-  if (reset && footerEl) footerEl.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+  if (footerEl) footerEl.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
 
   try {
     const result = await API.fetchHistoryPage(h.offset, 50);
@@ -906,8 +915,9 @@ function renderHistoryList() {
   const rounds = groupIntoRounds(games, h.hasMore);
 
   // Auto-expand latest round on first render
-  if (AppState.expandedRounds.size === 0 && rounds.length > 0) {
+  if (AppState._historyFirstRender !== false && rounds.length > 0) {
     AppState.expandedRounds.add(rounds[0].id);
+    AppState._historyFirstRender = false;
   }
 
   let html = '';
@@ -954,11 +964,13 @@ function renderHistoryList() {
 
   if (footerEl) {
     if (h.hasMore) {
-      footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory(false)">${t('history_loading')}</div>`;
+      footerEl.innerHTML = `<div class="history-footer clickable" onclick="loadHistory(false)">${t('history_load_more')}</div>`;
       const content = document.getElementById('page-content');
       if (content) {
         content.onscroll = () => {
-          if (content.scrollTop + content.clientHeight >= content.scrollHeight - 100) loadHistory(false);
+          if (!h.loading && h.hasMore && content.scrollTop + content.clientHeight >= content.scrollHeight - 150) {
+            loadHistory(false);
+          }
         };
       }
     } else {
@@ -1393,9 +1405,9 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
   if (!games || games.length < 2) return;
 
   const players = selectedPlayers || allPlayers;
-  const width = container.clientWidth || 360;
+  const width = Math.max(container.clientWidth || 360, container.parentElement ? container.parentElement.clientWidth - 8 : 360);
   const height = 220;
-  const padding = { top: 20, right: 16, bottom: 30, left: 50 };
+  const padding = { top: 20, right: 16, bottom: 36, left: 50 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
 
@@ -1460,7 +1472,15 @@ function renderTrendChart(container, games, allPlayers, title, selectedPlayers) 
     svg += `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   });
 
-  svg += `<text x="${width / 2}" y="${height - 4}" text-anchor="middle" fill="var(--muted)" font-size="10">${t('trend_x_label')}</text>`;
+  // X-axis numbers
+  const totalGames = reversedGames.length;
+  const xTickCount = Math.min(totalGames, 8);
+  for (let i = 0; i < xTickCount; i++) {
+    const gameIdx = Math.round(i * (totalGames - 1) / Math.max(xTickCount - 1, 1));
+    const x = padding.left + (chartW / Math.max(totalGames - 1, 1)) * gameIdx;
+    svg += `<text x="${x.toFixed(1)}" y="${padding.top + chartH + 16}" text-anchor="middle" fill="var(--muted)" font-size="10">${gameIdx + 1}</text>`;
+  }
+  svg += `<text x="${width / 2}" y="${height - 2}" text-anchor="middle" fill="var(--muted)" font-size="10">${t('trend_x_label')}</text>`;
   svg += '</svg>';
 
   let legend = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;justify-content:center">';
