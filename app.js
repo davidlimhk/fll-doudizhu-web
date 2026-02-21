@@ -2066,9 +2066,10 @@ let _bgmAudio = null;
 // === Web Audio API for instant SFX playback ===
 let _audioCtx = null;
 const _sfxBuffers = {}; // { click, tap, card, success } -> AudioBuffer
-const _sfxVolumes = { click: 0.6, tap: 0.5, card: 0.5, success: 0.5 };
+const _sfxVolumes = { click: 0.7, tap: 0.5, card: 0.5, success: 0.5 };
+// Inline Base64 WAV for click (30ms, 2.7KB) - zero network latency
+const _CLICK_WAV_B64 = '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z//W/+L/8v8DABQAIgArAC8ALQAlABkACQD6/+v/3//X/9T/1v/e/+v/+v8IABcAIgAoACoAJgAdABEAAwD2/+n/4P/a/9n/3f/m//L///8MABgAIAAlACQAHwAWAAsA///z/+j/4f/d/97/4//s//j/AwAPABgAHgAhAB8AGQAQAAYA+//x/+j/4//h/+P/6f/y//3/BgAQABgAHAAdABoAFAALAAEA+P/w/+n/5f/l/+j/7v/3/wAACQARABcAGQAZABUADwAHAP//9v/v/+r/6P/p/+3/8//7/wMACwARABUAFwAVABEACwADAPz/9f/v/+z/6//s//H/9//+/wUADAARABQAFAASAA0ABwAAAPr/9P/w/+3/7f/w//T/+v8AAAcADAAQABIAEQAOAAoABAD///n/9P/x/+//8P/z//j//f8CAAgADAAPABAADgALAAcAAgD9//j/9P/y//H/8//2//r///8EAAgADAAOAA4ADAAJAAQAAAD8//j/9f/z//P/9f/4//3/AAAFAAkACwAMAAwACgAGAAIA///7//j/9f/1//X/9//7//7/AgAFAAgACgALAAoACAAEAAEA/v/6//j/9v/2//f/+f/8/wAAAwAGAAgACQAJAAgABgADAAAA/f/6//j/9//3//n/+//+/wAAAwAGAAgACAAIAAYABAABAP///P/6//n/+P/5//r//f///wEABAAGAAcABwAHAAUAAwAAAP7//P/6//n/+f/6//z//v8AAAIABAAGAAYABgAFAAQAAgAAAP7//P/7//r/+v/7//3///8AAAIABAAFAAYABQAEAAMAAQD///3//P/7//v/+//8//7/AAABAAMABAAFAAUABAADAAIAAAD///3//P/7//v//P/9////AAABAAMABAAEAAQABAACAAEAAAD///3//P/8//z//f/+/wAAAAACAAMABAAEAAQAAwACAAAAAAD+//3//f/8//3//v///wAAAQACAAMAAwADAAMAAgABAAAA///+//3//f/9//3//v///wAAAQACAAMAAwADAAIAAQAAAAAA///+//7//f/9//7///8AAAAAAQACAAIAAwACAAIAAQAAAAAA///+//7//v/+//////8AAAAAAQACAAIAAgACAAEAAAAAAAAA///+//7//v/+////AAA=';
 const _sfxFiles = {
-  click: 'audio/mouse-click.mp3',
   tap: 'audio/sfx_tap.mp3',
   card: 'audio/sfx_card.mp3',
   success: 'audio/sfx_success.mp3',
@@ -2087,10 +2088,20 @@ function _getAudioCtx() {
 async function _preloadSfxBuffer(type) {
   if (_sfxBuffers[type]) return;
   try {
-    const resp = await fetch(_sfxFiles[type]);
-    const arrayBuf = await resp.arrayBuffer();
-    const ctx = _getAudioCtx();
-    _sfxBuffers[type] = await ctx.decodeAudioData(arrayBuf);
+    if (type === 'click') {
+      // Decode inline Base64 WAV - instant, no network request
+      const binary = atob(_CLICK_WAV_B64);
+      const buf = new ArrayBuffer(binary.length);
+      const view = new Uint8Array(buf);
+      for (let i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);
+      const ctx = _getAudioCtx();
+      _sfxBuffers.click = await ctx.decodeAudioData(buf);
+    } else {
+      const resp = await fetch(_sfxFiles[type]);
+      const arrayBuf = await resp.arrayBuffer();
+      const ctx = _getAudioCtx();
+      _sfxBuffers[type] = await ctx.decodeAudioData(arrayBuf);
+    }
   } catch (e) {
     console.warn('[Audio] Failed to preload SFX:', type, e);
   }
@@ -2099,6 +2110,7 @@ async function _preloadSfxBuffer(type) {
 function preloadAllSfx() {
   if (_sfxPreloaded) return;
   _sfxPreloaded = true;
+  _preloadSfxBuffer('click');
   Object.keys(_sfxFiles).forEach(type => _preloadSfxBuffer(type));
 }
 
