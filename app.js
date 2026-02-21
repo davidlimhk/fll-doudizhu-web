@@ -126,20 +126,54 @@ async function initApp() {
 
 async function preloadAllData() {
   if (!API.getAuthEmail()) return;
-  try {
-    // Preload history and stats in parallel
-    const [historyPage, statsAll, statsRound] = await Promise.all([
-      API.fetchHistoryPage(0, 500).catch(() => null),
-      API.fetchStats('全部').catch(() => null),
-      API.fetchStats('本回合').catch(() => null),
-    ]);
-    // Cache results for tabs to use
-    if (historyPage) window._preloadedHistory = historyPage;
-    if (statsAll) window._preloadedStatsAll = statsAll;
-    if (statsRound) window._preloadedStatsRound = statsRound;
-    console.log('[Preload] Background data loaded');
-  } catch (err) {
-    console.warn('[Preload] Background data load failed:', err);
+
+  const hasCache = API.hasFullCache();
+
+  if (hasCache) {
+    // Incremental load: only fetch latest round data
+    console.log('[Preload] Full cache exists, loading only latest round...');
+    try {
+      const [historyPage, statsRound] = await Promise.all([
+        API.fetchHistoryPage(0, 200).catch(() => null),
+        API.fetchStats('本回合').catch(() => null),
+      ]);
+      if (historyPage) window._preloadedHistory = historyPage;
+      if (statsRound) window._preloadedStatsRound = statsRound;
+      // Use cached stats for non-round ranges
+      const cachedStatsAll = API.getCachedStats('所有局数');
+      if (cachedStatsAll) window._preloadedStatsAll = cachedStatsAll;
+      console.log('[Preload] Incremental load complete');
+    } catch (err) {
+      console.warn('[Preload] Incremental load failed:', err);
+    }
+  } else {
+    // Full load: fetch everything and cache aggressively
+    console.log('[Preload] No cache, performing full data load...');
+    try {
+      const STATS_RANGES_TO_CACHE = ['本回合', '所有局数', '最近100局', '最近500局', '最近1000局', '最近参与的1000局'];
+      const statsPromises = STATS_RANGES_TO_CACHE.map(r => API.fetchStats(r).catch(() => null));
+      const historyPromise = API.fetchHistoryPage(0, 500).catch(() => null);
+
+      const [historyPage, ...allStats] = await Promise.all([historyPromise, ...statsPromises]);
+
+      if (historyPage) {
+        window._preloadedHistory = historyPage;
+        API.cacheFullHistory(historyPage.data, historyPage.players, historyPage.total);
+      }
+
+      STATS_RANGES_TO_CACHE.forEach((range, idx) => {
+        if (allStats[idx]) {
+          // Already cached by API.fetchStats internally
+          if (range === '所有局数') window._preloadedStatsAll = allStats[idx];
+          if (range === '本回合') window._preloadedStatsRound = allStats[idx];
+        }
+      });
+
+      API.markFullCacheComplete();
+      console.log('[Preload] Full data load + cache complete');
+    } catch (err) {
+      console.warn('[Preload] Full data load failed:', err);
+    }
   }
 }
 
@@ -1285,8 +1319,23 @@ async function loadHistory(reset = false) {
   if (footerEl) footerEl.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><span style="color:var(--muted);font-size:14px;margin-left:8px">${t('common_loading')}</span></div>`;
 
   try {
+    let result;
     const batchSize = h.offset === 0 ? 200 : 100;
-    const result = await API.fetchHistoryPage(h.offset, batchSize);
+
+    // For pages beyond the first, try cached full history
+    if (h.offset > 0 && API.hasFullCache()) {
+      const cached = API.getCachedFullHistory();
+      if (cached && cached.data && h.offset < cached.data.length) {
+        const slice = cached.data.slice(h.offset, h.offset + batchSize);
+        result = { data: slice, players: cached.players, total: cached.total, hasMore: h.offset + slice.length < cached.data.length };
+        console.log('[History] Using cached data for offset:', h.offset);
+      } else {
+        result = await API.fetchHistoryPage(h.offset, batchSize);
+      }
+    } else {
+      result = await API.fetchHistoryPage(h.offset, batchSize);
+    }
+
     let games = result.data;
 
     if (h.offset === 0) {
@@ -1678,10 +1727,32 @@ async function loadStatsData() {
 
   try {
     const limit = st.range === '所有局数' ? 10000 : st.range === '最近1000局' || st.range === '最近参与的1000局' ? 1000 : st.range === '最近500局' ? 500 : st.range === '最近100局' ? 100 : 500;
-    const [statsData, historyPage] = await Promise.all([
-      API.fetchStats(st.range),
-      API.fetchHistoryPage(0, limit),
-    ]);
+
+    // Use cached stats for non-round ranges when full cache exists
+    let statsData, historyPage;
+    const hasCache = API.hasFullCache();
+    const isRoundRange = st.range === '本回合';
+
+    if (hasCache && !isRoundRange) {
+      // Try cached stats first, fall back to API
+      const cachedStats = API.getCachedStats(st.range);
+      const cachedHistory = API.getCachedFullHistory();
+      if (cachedStats && cachedHistory) {
+        statsData = cachedStats;
+        historyPage = cachedHistory;
+        console.log('[Stats] Using cached data for range:', st.range);
+      } else {
+        [statsData, historyPage] = await Promise.all([
+          API.fetchStats(st.range),
+          API.fetchHistoryPage(0, limit),
+        ]);
+      }
+    } else {
+      [statsData, historyPage] = await Promise.all([
+        API.fetchStats(st.range),
+        API.fetchHistoryPage(0, limit),
+      ]);
+    }
 
     const pending = API.getPendingSubmissions();
     st.data = overlayPendingOnStats(statsData, pending);
@@ -1906,7 +1977,7 @@ function renderSettingsPage(container) {
         </div>
         <div style="display:flex;align-items:center;gap:10px">
           ${countdownDisplay}
-          <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" style="min-width:60px;min-height:32px;display:inline-flex;align-items:center;justify-content:center${_serverTesting ? ';opacity:0.5;cursor:not-allowed' : ''}" ${_serverTesting ? 'disabled' : ''}>${_serverTesting ? '<span class="spinner" style="width:18px;height:18px;border-width:2.5px;display:inline-block"></span>' : t('settings_server_test_button')}</button>
+          <button id="server-test-btn" class="settings-action-btn" onclick="handleManualServerTest()" style="min-width:60px;min-height:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box${_serverTesting ? ';opacity:0.5;cursor:not-allowed' : ''}" ${_serverTesting ? 'disabled' : ''}>${_serverTesting ? '<span class="spinner" style="width:18px;height:18px;border-width:2.5px;display:inline-block"></span>' : t('settings_server_test_button')}</button>
         </div>
       </div>
     </div>
@@ -1938,12 +2009,15 @@ function renderSettingsPage(container) {
         <span class="settings-row-label">${t('settings_login_validity')}</span>
         <span class="settings-row-value" id="login-validity-text">${getLoginValidityText(authData.verifiedAt)}</span>
       </div>` : ''}
-      <div class="settings-row" style="cursor:pointer" onclick="handleLogout()">
-        <span class="settings-row-label text-error" style="display:flex;align-items:center;gap:4px">
-          <span class="material-icons" style="font-size:18px">logout</span>
-          ${t('auth_relogin_settings')}
-        </span>
-        <span class="material-icons text-muted" style="font-size:20px">chevron_right</span>
+      <div class="settings-row" style="padding:0;border-top:1px solid var(--border)">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:12px 0;cursor:pointer;border-right:1px solid var(--border)" onclick="playSfx('click');handleRefreshAllData()">
+          <span class="material-icons" style="font-size:18px;color:var(--primary)">refresh</span>
+          <span style="color:var(--primary);font-size:calc(14px * var(--font-scale));font-weight:500">${t('settings_refresh_data')}</span>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:12px 0;cursor:pointer" onclick="playSfx('click');handleLogout()">
+          <span class="material-icons text-error" style="font-size:18px">logout</span>
+          <span class="text-error" style="font-size:calc(14px * var(--font-scale));font-weight:500">${t('auth_relogin_settings')}</span>
+        </div>
       </div>
     </div>
   </div>`;
@@ -2162,9 +2236,11 @@ function updateServerStatusUI() {
       : t('settings_server_test_button');
     testBtn.style.minWidth = '60px';
     testBtn.style.minHeight = '32px';
+    testBtn.style.height = '32px';
     testBtn.style.display = 'inline-flex';
     testBtn.style.alignItems = 'center';
     testBtn.style.justifyContent = 'center';
+    testBtn.style.boxSizing = 'border-box';
   }
   // Show/hide countdown based on testing state
   if (countdownEl) {
@@ -2189,8 +2265,29 @@ function forceClearPending() {
   }
 }
 
+async function handleRefreshAllData() {
+  showToast(t('common_loading'), 'info', 2000);
+  // Clear all caches
+  API.clearFullCache();
+  // Clear preloaded data
+  window._preloadedHistory = null;
+  window._preloadedStatsAll = null;
+  window._preloadedStatsRound = null;
+  // Reset history state
+  AppState.history.games = [];
+  AppState.history.offset = 0;
+  AppState.history.hasMore = true;
+  // Perform full data load
+  await preloadAllData();
+  // Re-render current tab
+  AppState._tabRenderedToken = {};
+  renderCurrentTab();
+  showToast(t('settings_refresh_data_done') || '\u6578\u64DA\u5DF2\u5237\u65B0', 'success', 2000);
+}
+
 function handleLogout() {
   API.clearAuth();
+  API.clearFullCache();
   // Revoke Google session if GIS is loaded
   if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
     google.accounts.id.disableAutoSelect();
@@ -2352,7 +2449,7 @@ function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
     if (y < marginTop || y > marginTop + chartH) return;
     const isZero = tick === 0;
     svg += `<line x1="${marginLeft}" y1="${y}" x2="${width - marginRight}" y2="${y}" stroke="var(--border)" stroke-width="${isZero ? 1.5 : 1}" ${isZero ? '' : 'stroke-dasharray="4,3"'}/>`;
-    svg += `<text x="${marginLeft - 6}" y="${y + 4}" text-anchor="end" fill="var(--muted)" font-size="9">${Math.round(tick)}</text>`;
+    svg += `<text x="${marginLeft - 6}" y="${y + 4}" text-anchor="end" fill="var(--fg)" font-size="10" font-weight="600">${Math.round(tick)}</text>`;
   });
 
   // X-axis line
@@ -2360,14 +2457,14 @@ function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
 
   // X-axis tick labels
   xTicks.forEach(gameIdx => {
-    svg += `<text x="${xScale(gameIdx).toFixed(1)}" y="${marginTop + chartH + 14}" text-anchor="middle" fill="var(--muted)" font-size="9">${gameIdx + 1}</text>`;
+    svg += `<text x="${xScale(gameIdx).toFixed(1)}" y="${marginTop + chartH + 14}" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="600">${gameIdx + 1}</text>`;
   });
 
   // Y-axis label (rotated)
-  svg += `<text x="12" y="${marginTop + chartH / 2}" text-anchor="middle" fill="var(--muted)" font-size="9" transform="rotate(-90, 12, ${marginTop + chartH / 2})">${t('trend_y_label')}</text>`;
+  svg += `<text x="12" y="${marginTop + chartH / 2}" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="600" transform="rotate(-90, 12, ${marginTop + chartH / 2})">${t('trend_y_label')}</text>`;
 
   // X-axis label
-  svg += `<text x="${marginLeft + chartW / 2}" y="${height - 4}" text-anchor="middle" fill="var(--muted)" font-size="9">${t('trend_x_label')}</text>`;
+  svg += `<text x="${marginLeft + chartW / 2}" y="${height - 4}" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="600">${t('trend_x_label')}</text>`;
 
   // Left border
   svg += `<line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${marginTop + chartH}" stroke="var(--border)" stroke-width="1.5"/>`;
@@ -2377,7 +2474,7 @@ function renderStatsTrendChart(container, games, allPlayers, selectedPlayers) {
     const series = playerSeries[player];
     const color = colors[pIdx % colors.length];
     const points = series.map(pt => `${xScale(pt.x).toFixed(1)},${yScale(pt.y).toFixed(1)}`).join(' ');
-    svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>`;
     // End point dot
     const lastPt = series[series.length - 1];
     svg += `<circle cx="${xScale(lastPt.x).toFixed(1)}" cy="${yScale(lastPt.y).toFixed(1)}" r="4" fill="${color}"/>`;

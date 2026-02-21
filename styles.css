@@ -135,6 +135,7 @@ html, body {
   margin-bottom: 16px;
   margin-top: 8px;
   color: var(--fg);
+  text-align: center;
 }
 
 /* ===== Card ===== */
@@ -327,7 +328,7 @@ html, body {
 
 /* ===== Round Summary ===== */
 .round-section { margin-top: 8px; }
-.round-title { font-size: calc(18px * var(--font-scale)); font-weight: 700; margin-bottom: 12px; color: var(--fg); }
+.round-title { font-size: calc(18px * var(--font-scale)); font-weight: 700; margin-bottom: 12px; color: var(--fg); text-align: center; }
 
 .summary-table {
   border-radius: 10px;
@@ -854,7 +855,7 @@ html, body {
 
 /* Charts section */
 .charts-section { margin-top: 24px; }
-.chart-title { font-size: calc(15px * var(--font-scale)); font-weight: 600; margin-bottom: 4px; color: var(--fg); text-align: left; }
+.chart-title { font-size: calc(15px * var(--font-scale)); font-weight: 600; margin-bottom: 4px; color: var(--fg); text-align: center; }
 
 .player-selector-row {
   display: flex;

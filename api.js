@@ -5,10 +5,12 @@ const STORAGE_KEYS = {
   WEB_APP_URL: 'fll_web_app_url',
   PENDING_QUEUE: 'fll_pending_queue',
   HISTORY_CACHE: 'fll_history_cache',
+  HISTORY_FULL_CACHE: 'fll_history_full_cache',
   PARAMS_CACHE: 'fll_params_cache',
   STATS_CACHE: 'fll_stats_cache',
   LAST_COMBO: 'fll_last_player_combo',
   SETTINGS: 'fll_settings',
+  FULL_CACHE_TIME: 'fll_full_cache_time',
   AUTH_STATUS: '@fll_auth_status',
   AUTH_EMAIL: '@fll_auth_email',
   AUTH_VERIFIED_AT: '@fll_auth_verified_at',
@@ -273,6 +275,15 @@ const API = {
     return false;
   },
 
+  // ===== Cached Stats Getter =====
+  getCachedStats(range) {
+    try {
+      const cached = localStorage.getItem(`${STORAGE_KEYS.STATS_CACHE}_${range}`);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  },
+
   // ===== Fetch Stats =====
   async fetchStats(range) {
     const apiRange = range === '最近参与的1000局' ? 'SMA-1000' : range;
@@ -393,6 +404,48 @@ const API = {
   getCachedHistory() {
     try {
       const cached = localStorage.getItem(STORAGE_KEYS.HISTORY_CACHE);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  },
+
+  // ===== Full Data Cache (aggressive caching) =====
+  hasFullCache() {
+    return !!localStorage.getItem(STORAGE_KEYS.FULL_CACHE_TIME);
+  },
+
+  getFullCacheTime() {
+    return localStorage.getItem(STORAGE_KEYS.FULL_CACHE_TIME);
+  },
+
+  clearFullCache() {
+    localStorage.removeItem(STORAGE_KEYS.FULL_CACHE_TIME);
+    localStorage.removeItem(STORAGE_KEYS.HISTORY_FULL_CACHE);
+    // Clear all stats caches
+    const ranges = ['\u672c\u56de\u5408', '\u6240\u6709\u5c40\u6570', '\u6700\u8fd1100\u5c40', '\u6700\u8fd1500\u5c40', '\u6700\u8fd11000\u5c40', '\u6700\u8fd1\u53c2\u4e0e\u76841000\u5c40'];
+    ranges.forEach(r => localStorage.removeItem(`${STORAGE_KEYS.STATS_CACHE}_${r}`));
+    console.log('[Cache] Full cache cleared');
+  },
+
+  markFullCacheComplete() {
+    localStorage.setItem(STORAGE_KEYS.FULL_CACHE_TIME, Date.now().toString());
+    console.log('[Cache] Full cache marked complete');
+  },
+
+  // Cache full history data (all pages concatenated)
+  cacheFullHistory(allGames, players, total) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.HISTORY_FULL_CACHE, JSON.stringify({
+        players, data: allGames, total,
+      }));
+    } catch (e) {
+      console.warn('[Cache] Failed to cache full history (storage full?):', e);
+    }
+  },
+
+  getCachedFullHistory() {
+    try {
+      const cached = localStorage.getItem(STORAGE_KEYS.HISTORY_FULL_CACHE);
       if (cached) return JSON.parse(cached);
     } catch {}
     return null;
