@@ -32,7 +32,7 @@ const AppState = {
   stats: { range: '本回合', data: [], loading: false, historyGames: [], selectedPlayers: [], loadingHistory: false },
 };
 
-const APP_VERSION = 'v2.0.63';
+const APP_VERSION = 'v2.0.64';
 const GOOGLE_CLIENT_ID = '816020476016-r670uelh69npagn3hj7cu5odd2sv0s2u.apps.googleusercontent.com';
 const UNDO_WINDOW_MS = 60000;
 const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
@@ -360,18 +360,59 @@ function showAuthGate() {
   if (content) { content.classList.add('hidden'); content.classList.remove('visible'); }
 }
 
+// Detect in-app browsers (Messenger, Facebook, Instagram, LINE, WeChat, etc.)
+function isInAppBrowser() {
+  const ua = navigator.userAgent || '';
+  // Common in-app browser signatures
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\/|LIFF|MicroMessenger|WeChat|Twitter|Snapchat|Pinterest|TikTok|BytedanceWebview|DingTalk|Feishu|QQ\/|MQQBrowser\/|Messenger/i.test(ua);
+}
+
 function showAuthContent_Login() {
   const logoGroup = document.getElementById('auth-logo-group');
   const content = document.getElementById('auth-content');
   if (!content) return;
-  // Prepare content while still hidden
-  content.innerHTML = `
-    <button class="auth-google-btn" id="auth-google-btn" onclick="handleGoogleLogin()">
-      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-      <span>${t('auth_google_signin')}</span>
-    </button>
-    <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
-  `;
+
+  if (isInAppBrowser()) {
+    // In-app browser detected - show warning and copy link button
+    const pageUrl = window.location.href;
+    content.innerHTML = `
+      <div class="auth-inapp-warning">
+        <span class="material-icons" style="font-size:36px;color:rgba(255,255,255,0.9);margin-bottom:12px">open_in_browser</span>
+        <div class="auth-status-text" style="font-size:17px;font-weight:600;margin-bottom:8px">${t('auth_inapp_browser_title')}</div>
+        <div class="auth-email-text" style="font-size:14px;margin-bottom:20px;color:rgba(255,255,255,0.7)">${t('auth_inapp_browser_msg')}</div>
+        <button class="auth-btn-primary" id="auth-copy-link-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:280px;margin:0 auto">
+          <span class="material-icons" style="font-size:20px">content_copy</span>
+          <span>${t('auth_inapp_browser_copy')}</span>
+        </button>
+      </div>
+      <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
+    `;
+    // Attach copy handler
+    const copyBtn = document.getElementById('auth-copy-link-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(pageUrl).then(() => {
+          copyBtn.innerHTML = `<span class="material-icons" style="font-size:20px">check</span><span>${t('auth_inapp_browser_copied')}</span>`;
+          setTimeout(() => {
+            copyBtn.innerHTML = `<span class="material-icons" style="font-size:20px">content_copy</span><span>${t('auth_inapp_browser_copy')}</span>`;
+          }, 3000);
+        }).catch(() => {
+          // Fallback: select text for manual copy
+          prompt(t('auth_inapp_browser_copy'), pageUrl);
+        });
+      });
+    }
+  } else {
+    // Normal browser - show Google Sign-In button
+    content.innerHTML = `
+      <button class="auth-google-btn" id="auth-google-btn" onclick="handleGoogleLogin()">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        <span>${t('auth_google_signin')}</span>
+      </button>
+      <div class="auth-version">${t('auth_app_version')} ${APP_VERSION}</div>
+    `;
+  }
+
   content.classList.remove('hidden');
   // Use rAF to ensure the logo shift happens in a clean paint frame
   requestAnimationFrame(() => {
