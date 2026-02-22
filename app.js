@@ -32,7 +32,7 @@ const AppState = {
   stats: { range: '本回合', data: [], loading: false, historyGames: [], selectedPlayers: [], loadingHistory: false },
 };
 
-const APP_VERSION = 'v2.0.64';
+const APP_VERSION = 'v2.0.65';
 const GOOGLE_CLIENT_ID = '816020476016-r670uelh69npagn3hj7cu5odd2sv0s2u.apps.googleusercontent.com';
 const UNDO_WINDOW_MS = 60000;
 const DEFAULT_SELECTED_PLAYERS = ['P', 'HK', 'E', 'L', '7C', 'T', 'A'];
